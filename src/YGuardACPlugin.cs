@@ -10,7 +10,7 @@ namespace YGuardAC;
 public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 {
     public override string ModuleName => "YGuardAC";
-    public override string ModuleVersion => "1.1.4";
+    public override string ModuleVersion => "1.1.5";
     public override string ModuleAuthor => "yguard";
     public override string ModuleDescription => "Suspicion-score anti-cheat with kick/ban thresholds";
 
@@ -25,8 +25,49 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 
     public void OnConfigParsed(YGuardACConfig config)
     {
+        MigrateLegacyConfig(config);
         Config = config;
         _scores = new ScoreManager(config.Score);
+        Console.WriteLine(
+            $"[YGuardAC] config ready decay={config.Score.DecayPerSecond:F2} banAt={config.Actions.BanThreshold:F0} " +
+            $"smokeScore={config.SmokeKill.Score:F0} smokeBanAfter={config.SmokeKill.BanAfterMatchKills}");
+    }
+
+    /// <summary>
+    /// Old JSON from first install kept decay=0.6 / ban=90 and blocked real bans.
+    /// Force sane values whenever we detect that legacy profile.
+    /// </summary>
+    private static void MigrateLegacyConfig(YGuardACConfig c)
+    {
+        if (c.Score.DecayPerSecond > 0.25f)
+            c.Score.DecayPerSecond = 0.1f;
+        if (c.Score.FloorPercentOfPeak > 0f)
+            c.Score.FloorPercentOfPeak = 0f;
+        if (c.Score.ModuleCooldownSeconds > 0.3f)
+            c.Score.ModuleCooldownSeconds = 0.2f;
+
+        if (c.Actions.BanThreshold > 55f)
+            c.Actions.BanThreshold = 40f;
+        if (c.Actions.KickThreshold > 55f)
+            c.Actions.KickThreshold = 40f;
+        if (c.Actions.AlertThreshold > 35f)
+            c.Actions.AlertThreshold = 20f;
+
+        if (c.SmokeKill.Score < 12f)
+            c.SmokeKill.Score = 15f;
+        if (c.SmokeKill.KillsThreshold > 1)
+            c.SmokeKill.KillsThreshold = 1;
+        c.SmokeKill.CooldownSeconds = 0f;
+        if (c.SmokeKill.BanAfterMatchKills <= 0)
+            c.SmokeKill.BanAfterMatchKills = 5;
+
+        if (c.Wallbang.Score < 12f)
+            c.Wallbang.Score = 15f;
+        if (c.Wallbang.KillsThreshold > 1)
+            c.Wallbang.KillsThreshold = 1;
+        c.Wallbang.CooldownSeconds = 0f;
+        if (c.Wallbang.BanAfterMatchKills <= 0)
+            c.Wallbang.BanAfterMatchKills = 5;
     }
 
     public override void Load(bool hotReload)
@@ -47,7 +88,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         AddCommand("css_ygac_reset", "Reset a player score by userid", OnResetScore);
         AddCommand("css_ygac_debug", "Debug smoke/wallbang counters", OnDebug);
 
-        Console.WriteLine("[YGuardAC] Loaded v1.1.4 — smoke/wallbang score accumulate + ban@50.");
+        Console.WriteLine("[YGuardAC] Loaded v1.1.5 — migrate old config + ban after 5 smoke/wallbang kills.");
     }
 
     public override void Unload(bool hotReload)
@@ -378,15 +419,25 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 
         if (!smokeKill) return;
 
+        st.SessionSmokeHits++;
         st.SmokeKills++;
-        st.LastKillDebug += $" | smokeYES:{reason}";
+        st.LastKillDebug += $" | smokeYES:{reason} sessionSmoke={st.SessionSmokeHits}";
+
+        // Always apply score with zero cooldown for smoke (ignore stale global cooldown).
         if (st.SmokeKills >= Config.SmokeKill.KillsThreshold)
         {
             bool applied = AddScore(attacker, st, "SmokeKill", Config.SmokeKill.Score, now,
-                $"{reason} x{st.SmokeKills}", Config.SmokeKill.CooldownSeconds);
-            // Only clear when score actually applied — otherwise rapid kills were wasted.
+                $"{reason} x{st.SmokeKills}", 0f);
             if (applied)
                 st.SmokeKills = 0;
+        }
+
+        int banAfter = Math.Max(1, Config.SmokeKill.BanAfterMatchKills);
+        if (st.SessionSmokeHits >= banAfter && !IsExemptFromPunishment(attacker))
+        {
+            Console.WriteLine($"[YGuardAC] SMOKE-BAN {st.Name} sessionSmoke={st.SessionSmokeHits}");
+            NotifyAdmins($"SMOKE-BAN {st.Name} x{st.SessionSmokeHits} thrusmoke/los");
+            BanPlayer(attacker, st);
         }
     }
 
@@ -395,14 +446,24 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         if (!Config.Wallbang.Enabled) return;
         if (penetrated < Config.Wallbang.MinPenetrations) return;
 
+        st.SessionWallHits++;
         st.WallbangKills++;
-        st.LastKillDebug += $" | wallYES:pen={penetrated}";
+        st.LastKillDebug += $" | wallYES:pen={penetrated} sessionWall={st.SessionWallHits}";
+
         if (st.WallbangKills >= Config.Wallbang.KillsThreshold)
         {
             bool applied = AddScore(attacker, st, "Wallbang", Config.Wallbang.Score, now,
-                $"penetrated={penetrated} x{st.WallbangKills}", Config.Wallbang.CooldownSeconds);
+                $"penetrated={penetrated} x{st.WallbangKills}", 0f);
             if (applied)
                 st.WallbangKills = 0;
+        }
+
+        int banAfter = Math.Max(1, Config.Wallbang.BanAfterMatchKills);
+        if (st.SessionWallHits >= banAfter && !IsExemptFromPunishment(attacker))
+        {
+            Console.WriteLine($"[YGuardAC] WALL-BAN {st.Name} sessionWall={st.SessionWallHits}");
+            NotifyAdmins($"WALL-BAN {st.Name} x{st.SessionWallHits}");
+            BanPlayer(attacker, st);
         }
     }
 
@@ -625,9 +686,13 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         if (player is null || !player.IsValid) return;
         _scores.TryGet(player.Slot, out var st);
         info.ReplyToCommand(
-            $"[YGuardAC] debug score={(st?.Score ?? 0):F1} smokeKills={st?.SmokeKills ?? 0} wallKills={st?.WallbangKills ?? 0} " +
+            $"[YGuardAC] v{ModuleVersion} score={(st?.Score ?? 0):F1} peak={(st?.PeakScore ?? 0):F1} " +
+            $"sessionSmoke={st?.SessionSmokeHits ?? 0}/{Config.SmokeKill.BanAfterMatchKills} " +
+            $"sessionWall={st?.SessionWallHits ?? 0}/{Config.Wallbang.BanAfterMatchKills}");
+        info.ReplyToCommand(
+            $"[YGuardAC] debug smokeKills={st?.SmokeKills ?? 0} wallKills={st?.WallbangKills ?? 0} " +
             $"activeSmokes={_smokes.Count} deathsSeen={st?.DeathEventsSeen ?? 0} " +
-            $"detectExempt={IsExemptFromDetection(player)} punishExempt={IsExemptFromPunishment(player)}");
+            $"decay={Config.Score.DecayPerSecond:F2} banAt={Config.Actions.BanThreshold:F0} smokePts={Config.SmokeKill.Score:F0}");
         info.ReplyToCommand($"[YGuardAC] lastKill: {st?.LastKillDebug ?? "none"}");
     }
 

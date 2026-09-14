@@ -25,6 +25,8 @@ internal sealed class PlayerAcState
     public int SnapKillHits;
     public int SmokeKills;
     public int WallbangKills;
+    public int SessionSmokeHits;
+    public int SessionWallHits;
     public int DeathEventsSeen;
     public string LastKillDebug = "none";
 

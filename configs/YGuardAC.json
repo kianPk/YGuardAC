@@ -69,14 +69,16 @@
     "Radius": 175.0,
     "DurationSeconds": 22.0,
     "KillsThreshold": 1,
-    "Score": 12.0,
-    "CooldownSeconds": 0.0
+    "Score": 15.0,
+    "CooldownSeconds": 0.0,
+    "BanAfterMatchKills": 5
   },
   "Wallbang": {
     "Enabled": true,
     "MinPenetrations": 1,
     "KillsThreshold": 1,
-    "Score": 12.0,
-    "CooldownSeconds": 0.0
+    "Score": 15.0,
+    "CooldownSeconds": 0.0,
+    "BanAfterMatchKills": 5
   }
 }
