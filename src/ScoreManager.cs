@@ -25,6 +25,8 @@ internal sealed class PlayerAcState
     public int SnapKillHits;
     public int SmokeKills;
     public int WallbangKills;
+    public int DeathEventsSeen;
+    public string LastKillDebug = "none";
 
     public string? LastWeapon;
     public float LastFireTime = -9999f;

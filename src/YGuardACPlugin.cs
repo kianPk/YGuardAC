@@ -10,7 +10,7 @@ namespace YGuardAC;
 public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 {
     public override string ModuleName => "YGuardAC";
-    public override string ModuleVersion => "1.1.2";
+    public override string ModuleVersion => "1.1.3";
     public override string ModuleAuthor => "yguard";
     public override string ModuleDescription => "Suspicion-score anti-cheat with kick/ban thresholds";
 
@@ -18,6 +18,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 
     private ScoreManager _scores = null!;
     private float _lastTickTime;
+    private float _lastSmokeScan;
     private readonly List<SmokeCloud> _smokes = new();
 
     private readonly record struct SmokeCloud(float X, float Y, float Z, float Expiry);
@@ -33,12 +34,20 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         _scores ??= new ScoreManager(Config.Score);
         RegisterListener<Listeners.OnTick>(OnTick);
 
+        // Explicit registration is more reliable than attributes on some CSS builds.
+        RegisterEventHandler<EventPlayerDeath>(OnPlayerDeath);
+        RegisterEventHandler<EventPlayerHurt>(OnPlayerHurt);
+        RegisterEventHandler<EventWeaponFire>(OnWeaponFire);
+        RegisterEventHandler<EventSmokegrenadeDetonate>(OnSmokeDetonate);
+        RegisterEventHandler<EventRoundStart>(OnRoundStart);
+        RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
+
         AddCommand("css_ygac", "Show your YGuardAC score", OnSelfScore);
         AddCommand("css_ygac_score", "Inspect a player score by userid", OnInspectScore);
         AddCommand("css_ygac_reset", "Reset a player score by userid", OnResetScore);
         AddCommand("css_ygac_debug", "Debug smoke/wallbang counters", OnDebug);
 
-        Console.WriteLine("[YGuardAC] Loaded. Alert/Kick/Ban thresholds ready.");
+        Console.WriteLine("[YGuardAC] Loaded v1.1.3 — smoke entity scan + Thrusmoke.");
     }
 
     public override void Unload(bool hotReload)
@@ -59,6 +68,12 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 
         if (_smokes.Count > 0)
             _smokes.RemoveAll(s => now > s.Expiry);
+
+        if (now - _lastSmokeScan >= 0.5f)
+        {
+            _lastSmokeScan = now;
+            ScanSmokeEntities(now);
+        }
 
         foreach (var player in Utilities.GetPlayers())
         {
@@ -176,7 +191,6 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         st.HasAngles = true;
     }
 
-    [GameEventHandler]
     public HookResult OnWeaponFire(EventWeaponFire @event, GameEventInfo info)
     {
         if (!Config.Enabled || !Config.RapidFire.Enabled) return HookResult.Continue;
@@ -215,7 +229,6 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         return HookResult.Continue;
     }
 
-    [GameEventHandler]
     public HookResult OnPlayerHurt(EventPlayerHurt @event, GameEventInfo info)
     {
         if (!Config.Enabled || !Config.Grief.Enabled) return HookResult.Continue;
@@ -239,7 +252,6 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         return HookResult.Continue;
     }
 
-    [GameEventHandler]
     public HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo info)
     {
         if (!Config.Enabled) return HookResult.Continue;
@@ -251,6 +263,26 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 
         float now = Server.CurrentTime;
         var st = _scores.GetOrCreate(attacker!.Slot, attacker.SteamID, attacker.PlayerName ?? "player", now);
+        st.DeathEventsSeen++;
+
+        ScanSmokeEntities(now);
+
+        bool thruSmoke = false;
+        int penetrated = 0;
+        try { thruSmoke = @event.Thrusmoke; } catch { /* ignore */ }
+        try { penetrated = @event.Penetrated; } catch { /* ignore */ }
+
+        bool enemyKill = victim is not null && victim.IsValid &&
+                         attacker.TeamNum != victim.TeamNum &&
+                         attacker.Slot != victim.Slot;
+
+        st.LastKillDebug =
+            $"deaths={st.DeathEventsSeen} enemy={enemyKill} teams={attacker.TeamNum}/{victim?.TeamNum} " +
+            $"thruSmoke={thruSmoke} pen={penetrated} smokes={_smokes.Count} " +
+            $"victimBot={(victim?.IsBot ?? false)}";
+
+        if (Config.VerboseConsole)
+            Console.WriteLine($"[YGuardAC] kill-debug {st.Name}: {st.LastKillDebug}");
 
         if (Config.Grief.Enabled && victim is not null && victim.IsValid &&
             attacker.TeamNum == victim.TeamNum && attacker.Slot != victim.Slot)
@@ -264,9 +296,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
             }
         }
 
-        if (Config.AimSnap.Enabled &&
-            victim is not null && victim.IsValid &&
-            attacker.TeamNum != victim.TeamNum &&
+        if (Config.AimSnap.Enabled && enemyKill &&
             now - st.LastSnapTime <= Config.AimSnap.SnapToKillWindowSeconds)
         {
             st.SnapKillHits++;
@@ -278,31 +308,27 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
             }
         }
 
-        bool enemyKill = victim is not null && victim.IsValid &&
-                         attacker.TeamNum != victim.TeamNum &&
-                         attacker.Slot != victim.Slot;
-
-        if (enemyKill)
+        if (enemyKill && victim is not null)
         {
-            CheckSmokeKill(attacker, victim!, @event, st, now);
-            CheckWallbangKill(attacker, @event, st, now);
+            CheckSmokeKill(attacker, victim, thruSmoke, st, now);
+            CheckWallbangKill(attacker, penetrated, st, now);
         }
 
         ProcessActions(attacker, st, now);
         return HookResult.Continue;
     }
 
-    [GameEventHandler]
     public HookResult OnSmokeDetonate(EventSmokegrenadeDetonate @event, GameEventInfo info)
     {
         if (!Config.Enabled || !Config.SmokeKill.Enabled) return HookResult.Continue;
 
         float expiry = Server.CurrentTime + Config.SmokeKill.DurationSeconds;
         _smokes.Add(new SmokeCloud(@event.X, @event.Y, @event.Z, expiry));
+        if (Config.VerboseConsole)
+            Console.WriteLine($"[YGuardAC] smoke detonate ({@event.X:F0},{@event.Y:F0},{@event.Z:F0}) total={_smokes.Count}");
         return HookResult.Continue;
     }
 
-    [GameEventHandler]
     public HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
     {
         _smokes.Clear();
@@ -315,67 +341,138 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         return HookResult.Continue;
     }
 
-    private void CheckSmokeKill(CCSPlayerController attacker, CCSPlayerController victim, EventPlayerDeath @event, PlayerAcState st, float now)
+    private void CheckSmokeKill(CCSPlayerController attacker, CCSPlayerController victim, bool thruSmokeFlag, PlayerAcState st, float now)
     {
         if (!Config.SmokeKill.Enabled) return;
 
-        bool thruSmoke = false;
-        try
-        {
-            // Official CS2 death flag — more reliable than geometry alone.
-            thruSmoke = @event.Thrusmoke;
-        }
-        catch
-        {
-            thruSmoke = false;
-        }
+        bool smokeKill = thruSmokeFlag;
+        string reason = thruSmokeFlag ? "event.Thrusmoke" : "";
 
-        if (!thruSmoke)
+        if (!smokeKill)
         {
-            // Fallback geometry if event flag unavailable / false negative.
-            if (_smokes.Count == 0) return;
             var aPawn = attacker.PlayerPawn.Value;
             var vPawn = victim.PlayerPawn.Value;
-            if (aPawn is null || !aPawn.IsValid || vPawn is null || !vPawn.IsValid) return;
-            var aPos = aPawn.AbsOrigin;
-            var vPos = vPawn.AbsOrigin;
-            if (aPos is null || vPos is null) return;
-            if (!IsSmokeBlockingLos(aPos.X, aPos.Y, aPos.Z + 64f, vPos.X, vPos.Y, vPos.Z + 64f))
-                return;
+            if (aPawn is not null && aPawn.IsValid && vPawn is not null && vPawn.IsValid)
+            {
+                var aPos = aPawn.AbsOrigin;
+                var vPos = vPawn.AbsOrigin;
+                if (aPos is not null && vPos is not null)
+                {
+                    float ax = aPos.X, ay = aPos.Y, az = aPos.Z + 64f;
+                    float vx = vPos.X, vy = vPos.Y, vz = vPos.Z + 64f;
+
+                    if (IsSmokeBlockingLos(ax, ay, az, vx, vy, vz))
+                    {
+                        smokeKill = true;
+                        reason = "los-through-smoke";
+                    }
+                    else if (IsPointInAnySmoke(vx, vy, vz) || IsPointInAnySmoke(vx, vy, vPos.Z))
+                    {
+                        // Kill while victim is inside the cloud (common "smoke kill").
+                        smokeKill = true;
+                        reason = "victim-in-smoke";
+                    }
+                }
+            }
         }
 
+        if (!smokeKill) return;
+
         st.SmokeKills++;
+        st.LastKillDebug += $" | smokeYES:{reason}";
         if (st.SmokeKills >= Config.SmokeKill.KillsThreshold)
         {
             AddScore(attacker, st, "SmokeKill", Config.SmokeKill.Score, now,
-                $"thru_smoke kill x{st.SmokeKills}");
+                $"{reason} x{st.SmokeKills}");
             st.SmokeKills = 0;
         }
     }
 
-    private void CheckWallbangKill(CCSPlayerController attacker, EventPlayerDeath @event, PlayerAcState st, float now)
+    private void CheckWallbangKill(CCSPlayerController attacker, int penetrated, PlayerAcState st, float now)
     {
         if (!Config.Wallbang.Enabled) return;
-
-        int penetrated = 0;
-        try
-        {
-            penetrated = @event.Penetrated;
-        }
-        catch
-        {
-            penetrated = 0;
-        }
-
         if (penetrated < Config.Wallbang.MinPenetrations) return;
 
         st.WallbangKills++;
+        st.LastKillDebug += $" | wallYES:pen={penetrated}";
         if (st.WallbangKills >= Config.Wallbang.KillsThreshold)
         {
             AddScore(attacker, st, "Wallbang", Config.Wallbang.Score, now,
                 $"penetrated={penetrated} x{st.WallbangKills}");
             st.WallbangKills = 0;
         }
+    }
+
+    private void ScanSmokeEntities(float now)
+    {
+        if (!Config.SmokeKill.Enabled) return;
+
+        try
+        {
+            foreach (var smoke in Utilities.FindAllEntitiesByDesignerName<CSmokeGrenadeProjectile>("smokegrenade_projectile"))
+            {
+                if (smoke is null || !smoke.IsValid) continue;
+
+                bool active = false;
+                try { active = smoke.DidSmokeEffect; } catch { /* ignore */ }
+                if (!active)
+                {
+                    try { active = smoke.SmokeEffectTickBegin > 0; } catch { /* ignore */ }
+                }
+                if (!active) continue;
+
+                float x = 0, y = 0, z = 0;
+                try
+                {
+                    var det = smoke.SmokeDetonationPos;
+                    if (det is not null)
+                    {
+                        x = det.X; y = det.Y; z = det.Z;
+                    }
+                }
+                catch { /* ignore */ }
+
+                if (MathF.Abs(x) < 0.1f && MathF.Abs(y) < 0.1f && MathF.Abs(z) < 0.1f)
+                {
+                    var origin = smoke.AbsOrigin;
+                    if (origin is null) continue;
+                    x = origin.X; y = origin.Y; z = origin.Z;
+                }
+
+                // Avoid duplicates near the same cloud.
+                bool exists = false;
+                foreach (var s in _smokes)
+                {
+                    float dx = s.X - x, dy = s.Y - y, dz = s.Z - z;
+                    if (dx * dx + dy * dy + dz * dz < 40f * 40f)
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists)
+                    _smokes.Add(new SmokeCloud(x, y, z, now + Config.SmokeKill.DurationSeconds));
+            }
+        }
+        catch (Exception ex)
+        {
+            if (Config.VerboseConsole)
+                Console.WriteLine($"[YGuardAC] smoke scan error: {ex.Message}");
+        }
+    }
+
+    private bool IsPointInAnySmoke(float x, float y, float z)
+    {
+        float r = Config.SmokeKill.Radius;
+        float r2 = r * r;
+        foreach (var s in _smokes)
+        {
+            float dx = s.X - x, dy = s.Y - y, dz = s.Z - z;
+            if (dx * dx + dy * dy + dz * dz <= r2)
+                return true;
+        }
+        return false;
     }
 
     private bool IsSmokeBlockingLos(float ax, float ay, float az, float vx, float vy, float vz)
@@ -401,7 +498,6 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         return false;
     }
 
-    [GameEventHandler]
     public HookResult OnPlayerDisconnect(EventPlayerDisconnect @event, GameEventInfo info)
     {
         var player = @event.Userid;
@@ -515,7 +611,9 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         _scores.TryGet(player.Slot, out var st);
         info.ReplyToCommand(
             $"[YGuardAC] debug score={(st?.Score ?? 0):F1} smokeKills={st?.SmokeKills ?? 0} wallKills={st?.WallbangKills ?? 0} " +
-            $"activeSmokes={_smokes.Count} detectExempt={IsExemptFromDetection(player)} punishExempt={IsExemptFromPunishment(player)}");
+            $"activeSmokes={_smokes.Count} deathsSeen={st?.DeathEventsSeen ?? 0} " +
+            $"detectExempt={IsExemptFromDetection(player)} punishExempt={IsExemptFromPunishment(player)}");
+        info.ReplyToCommand($"[YGuardAC] lastKill: {st?.LastKillDebug ?? "none"}");
     }
 
     private void OnSelfScore(CCSPlayerController? player, CommandInfo info)
