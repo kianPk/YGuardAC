@@ -28,6 +28,7 @@ internal sealed class PlayerAcState
     public int SessionSmokeHits;
     public int SessionWallHits;
     public int DeathEventsSeen;
+    public float ScoreWindowStart = -1f;
     public string LastKillDebug = "none";
 
     public string? LastWeapon;
@@ -98,5 +99,26 @@ internal sealed class ScoreManager
             st.ModuleCooldownUntil[module] = now + cd;
         applied = true;
         return st.Score;
+    }
+
+    public void ResetScoreWindow(PlayerAcState st, float now)
+    {
+        st.Score = 0f;
+        st.PeakScore = 0f;
+        st.AlertSent = false;
+        st.SmokeKills = 0;
+        st.WallbangKills = 0;
+        st.SessionSmokeHits = 0;
+        st.SessionWallHits = 0;
+        st.RapidFireHits = 0;
+        st.SnapKillHits = 0;
+        st.PerfectBhopChain = 0;
+        st.SpeedOverTicks = 0;
+        st.SpinTicks = 0;
+        st.TeamKills = 0;
+        st.TeamDamage = 0;
+        st.ModuleCooldownUntil.Clear();
+        st.ScoreWindowStart = now;
+        st.LastUpdateTime = now;
     }
 }

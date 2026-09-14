@@ -4,6 +4,7 @@
   "ExemptAdmins": true,
   "ExemptAdminsFromDetection": false,
   "AdminFlag": "@css/ban",
+  "ScoreResetMinutes": 10,
   "Score": {
     "MaxScore": 200.0,
     "MaxSingleAddition": 20.0,
@@ -19,7 +20,12 @@
     "BanMinKicks": 0,
     "AnnounceToAdmins": true,
     "BanCommand": "css_ban #{userid} 0 \"YGuardAC auto-ban (score {score:F0})\"",
-    "KickReason": "YGuardAC: suspicion score too high"
+    "KickReason": "YGuardAC: suspicion score too high",
+    "CancelMatchOnCheat": true,
+    "QuitServerOnCheat": true,
+    "AbortDelaySeconds": 4.0,
+    "HasuraAdminSecret": "",
+    "GraphqlUrl": ""
   },
   "RapidFire": {
     "Enabled": true,

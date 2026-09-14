@@ -15,6 +15,8 @@ public sealed class YGuardACConfig : BasePluginConfig
 
     [JsonPropertyName("Score")] public ScoreConfig Score { get; set; } = new();
     [JsonPropertyName("Actions")] public ActionsConfig Actions { get; set; } = new();
+    /// <summary>Reset each player's score / session counters after this many minutes in the match.</summary>
+    [JsonPropertyName("ScoreResetMinutes")] public float ScoreResetMinutes { get; set; } = 10f;
     [JsonPropertyName("RapidFire")] public RapidFireConfig RapidFire { get; set; } = new();
     [JsonPropertyName("Speedhack")] public SpeedhackConfig Speedhack { get; set; } = new();
     [JsonPropertyName("BunnyHop")] public BunnyHopConfig BunnyHop { get; set; } = new();
@@ -47,6 +49,16 @@ public sealed class ActionsConfig
     public string BanCommand { get; set; } =
         "css_ban #{userid} 0 \"YGuardAC auto-ban (score {score:F0})\"";
     public string KickReason { get; set; } = "YGuardAC: suspicion score too high";
+
+    /// <summary>After a cheat kick/ban, mark the 5stack match Canceled via GraphQL.</summary>
+    public bool CancelMatchOnCheat { get; set; } = true;
+    /// <summary>After a cheat kick/ban, quit the CS2 process (ends the match pod).</summary>
+    public bool QuitServerOnCheat { get; set; } = true;
+    public float AbortDelaySeconds { get; set; } = 4f;
+    /// <summary>Optional. Falls back to env HASURA_GRAPHQL_ADMIN_SECRET.</summary>
+    public string HasuraAdminSecret { get; set; } = "";
+    /// <summary>Optional. Defaults to {API_DOMAIN}/v1/graphql.</summary>
+    public string GraphqlUrl { get; set; } = "";
 }
 
 public sealed class RapidFireConfig

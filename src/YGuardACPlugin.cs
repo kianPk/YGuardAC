@@ -10,7 +10,7 @@ namespace YGuardAC;
 public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 {
     public override string ModuleName => "YGuardAC";
-    public override string ModuleVersion => "1.1.5";
+    public override string ModuleVersion => "1.2.0";
     public override string ModuleAuthor => "yguard";
     public override string ModuleDescription => "Suspicion-score anti-cheat with kick/ban thresholds";
 
@@ -88,7 +88,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         AddCommand("css_ygac_reset", "Reset a player score by userid", OnResetScore);
         AddCommand("css_ygac_debug", "Debug smoke/wallbang counters", OnDebug);
 
-        Console.WriteLine("[YGuardAC] Loaded v1.1.5 — migrate old config + ban after 5 smoke/wallbang kills.");
+        Console.WriteLine("[YGuardAC] Loaded v1.2.0 — 10m score reset + cancel match/quit on cheat.");
     }
 
     public override void Unload(bool hotReload)
@@ -124,6 +124,18 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
             if (pawn is null || !pawn.IsValid) continue;
 
             var st = _scores.GetOrCreate(player.Slot, player.SteamID, player.PlayerName ?? "player", now);
+            if (st.ScoreWindowStart < 0f)
+                st.ScoreWindowStart = now;
+
+            float resetSeconds = Math.Max(60f, Config.ScoreResetMinutes * 60f);
+            if (now - st.ScoreWindowStart >= resetSeconds)
+            {
+                _scores.ResetScoreWindow(st, now);
+                if (Config.VerboseConsole)
+                    Console.WriteLine($"[YGuardAC] score window reset for {st.Name} after {Config.ScoreResetMinutes:F0}m");
+                player.PrintToChat($" \x04[YGuardAC]\x01 Score reset ({Config.ScoreResetMinutes:F0} min window).");
+            }
+
             if (IsExemptFromDetection(player)) continue;
             CheckAnglesAndMovement(player, pawn, st, now, dt);
             ProcessActions(player, st, now);
@@ -437,7 +449,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         {
             Console.WriteLine($"[YGuardAC] SMOKE-BAN {st.Name} sessionSmoke={st.SessionSmokeHits}");
             NotifyAdmins($"SMOKE-BAN {st.Name} x{st.SessionSmokeHits} thrusmoke/los");
-            BanPlayer(attacker, st);
+            BanPlayer(attacker, st, "smoke-ban");
         }
     }
 
@@ -463,7 +475,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         {
             Console.WriteLine($"[YGuardAC] WALL-BAN {st.Name} sessionWall={st.SessionWallHits}");
             NotifyAdmins($"WALL-BAN {st.Name} x{st.SessionWallHits}");
-            BanPlayer(attacker, st);
+            BanPlayer(attacker, st, "wall-ban");
         }
     }
 
@@ -599,7 +611,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         // Ban is checked first. With BanMinKicks=0, crossing BanThreshold bans immediately.
         if (st.Score >= a.BanThreshold && st.KickCount >= a.BanMinKicks)
         {
-            BanPlayer(player, st);
+            BanPlayer(player, st, "score-ban");
             return;
         }
 
@@ -611,6 +623,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
             Console.WriteLine($"[YGuardAC] KICK {st.Name} [{st.SteamId}] score was high (kicks={st.KickCount})");
             NotifyAdmins($"KICK {st.Name} score high (#{st.KickCount})");
             KickPlayer(player, a.KickReason);
+            AbortAfterCheat($"{st.Name} kicked (score)");
         }
     }
 
@@ -620,9 +633,9 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         Server.ExecuteCommand($"kickid {player.UserId} {safe}");
     }
 
-    private void BanPlayer(CCSPlayerController player, PlayerAcState st)
+    private void BanPlayer(CCSPlayerController player, PlayerAcState st, string reasonTag)
     {
-        Console.WriteLine($"[YGuardAC] BAN {st.Name} [{st.SteamId}] score={st.Score:F1} kicks={st.KickCount}");
+        Console.WriteLine($"[YGuardAC] BAN {st.Name} [{st.SteamId}] score={st.Score:F1} kicks={st.KickCount} ({reasonTag})");
         NotifyAdmins($"BAN {st.Name} steam={st.SteamId} score={st.Score:F0}");
 
         string cmd = Config.Actions.BanCommand
@@ -641,7 +654,6 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
             Console.WriteLine($"[YGuardAC] BanCommand failed: {ex.Message}");
         }
 
-        // Always enforce removal from the match even if css_ban / SimpleAdmin is missing.
         KickPlayer(player, Config.Actions.KickReason + " (auto-ban)");
         try
         {
@@ -654,6 +666,18 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         }
 
         _scores.Remove(player.Slot);
+        AbortAfterCheat($"{st.Name} banned ({reasonTag})");
+    }
+
+    private void AbortAfterCheat(string reason)
+    {
+        if (MatchAbort.AlreadyStarted) return;
+        if (!Config.Actions.CancelMatchOnCheat && !Config.Actions.QuitServerOnCheat) return;
+
+        MatchAbort.Begin(Config, reason, (delay, action) =>
+        {
+            AddTimer(delay, action);
+        });
     }
 
     private void NotifyAdmins(string message)
