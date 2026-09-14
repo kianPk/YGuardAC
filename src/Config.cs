@@ -7,7 +7,10 @@ public sealed class YGuardACConfig : BasePluginConfig
 {
     [JsonPropertyName("Enabled")] public bool Enabled { get; set; } = true;
     [JsonPropertyName("VerboseConsole")] public bool VerboseConsole { get; set; } = true;
+    /// <summary>Skip kick/ban for admins. Detection/score still runs unless ExemptAdminsFromDetection.</summary>
     [JsonPropertyName("ExemptAdmins")] public bool ExemptAdmins { get; set; } = true;
+    /// <summary>If true, admins get no score at all (makes testing as admin look like score=0 forever).</summary>
+    [JsonPropertyName("ExemptAdminsFromDetection")] public bool ExemptAdminsFromDetection { get; set; } = false;
     [JsonPropertyName("AdminFlag")] public string AdminFlag { get; set; } = "@css/ban";
 
     [JsonPropertyName("Score")] public ScoreConfig Score { get; set; } = new();
@@ -106,18 +109,19 @@ public sealed class GriefConfig
 public sealed class SmokeKillConfig
 {
     public bool Enabled { get; set; } = true;
-    /// <summary>Smoke particle radius used for LOS blocking (CS smoke ~144-175u).</summary>
-    public float Radius { get; set; } = 150f;
-    public float DurationSeconds { get; set; } = 18f;
-    public int KillsThreshold { get; set; } = 3;
-    public float Score { get; set; } = 6f;
+    /// <summary>Fallback geometry radius if Thrusmoke event flag is missing.</summary>
+    public float Radius { get; set; } = 175f;
+    public float DurationSeconds { get; set; } = 22f;
+    /// <summary>How many through-smoke kills before adding score (1 = every kill).</summary>
+    public int KillsThreshold { get; set; } = 1;
+    public float Score { get; set; } = 8f;
 }
 
 public sealed class WallbangConfig
 {
     public bool Enabled { get; set; } = true;
-    /// <summary>Minimum walls penetrated on the killing shot (game event Penetrated).</summary>
     public int MinPenetrations { get; set; } = 1;
-    public int KillsThreshold { get; set; } = 3;
-    public float Score { get; set; } = 6f;
+    /// <summary>How many wallbang kills before adding score (1 = every kill).</summary>
+    public int KillsThreshold { get; set; } = 1;
+    public float Score { get; set; } = 8f;
 }

@@ -10,7 +10,7 @@ namespace YGuardAC;
 public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 {
     public override string ModuleName => "YGuardAC";
-    public override string ModuleVersion => "1.1.0";
+    public override string ModuleVersion => "1.1.2";
     public override string ModuleAuthor => "yguard";
     public override string ModuleDescription => "Suspicion-score anti-cheat with kick/ban thresholds";
 
@@ -36,6 +36,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         AddCommand("css_ygac", "Show your YGuardAC score", OnSelfScore);
         AddCommand("css_ygac_score", "Inspect a player score by userid", OnInspectScore);
         AddCommand("css_ygac_reset", "Reset a player score by userid", OnResetScore);
+        AddCommand("css_ygac_debug", "Debug smoke/wallbang counters", OnDebug);
 
         Console.WriteLine("[YGuardAC] Loaded. Alert/Kick/Ban thresholds ready.");
     }
@@ -62,12 +63,12 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         foreach (var player in Utilities.GetPlayers())
         {
             if (!IsValidHuman(player)) continue;
-            if (IsExempt(player)) continue;
 
             var pawn = player.PlayerPawn.Value;
             if (pawn is null || !pawn.IsValid) continue;
 
             var st = _scores.GetOrCreate(player.Slot, player.SteamID, player.PlayerName ?? "player", now);
+            if (IsExemptFromDetection(player)) continue;
             CheckAnglesAndMovement(player, pawn, st, now, dt);
             ProcessActions(player, st, now);
         }
@@ -181,7 +182,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         if (!Config.Enabled || !Config.RapidFire.Enabled) return HookResult.Continue;
 
         var player = @event.Userid;
-        if (!IsValidHuman(player) || IsExempt(player!)) return HookResult.Continue;
+        if (!IsValidHuman(player) || IsExemptFromDetection(player!)) return HookResult.Continue;
 
         float now = Server.CurrentTime;
         var st = _scores.GetOrCreate(player!.Slot, player.SteamID, player.PlayerName ?? "player", now);
@@ -222,7 +223,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         var attacker = @event.Attacker;
         var victim = @event.Userid;
         if (!IsValidHuman(attacker) || victim is null || !victim.IsValid) return HookResult.Continue;
-        if (IsExempt(attacker!)) return HookResult.Continue;
+        if (IsExemptFromDetection(attacker!)) return HookResult.Continue;
         if (attacker!.TeamNum != victim.TeamNum || attacker.Slot == victim.Slot) return HookResult.Continue;
 
         float now = Server.CurrentTime;
@@ -246,7 +247,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         var attacker = @event.Attacker;
         var victim = @event.Userid;
         if (!IsValidHuman(attacker)) return HookResult.Continue;
-        if (IsExempt(attacker!)) return HookResult.Continue;
+        if (IsExemptFromDetection(attacker!)) return HookResult.Continue;
 
         float now = Server.CurrentTime;
         var st = _scores.GetOrCreate(attacker!.Slot, attacker.SteamID, attacker.PlayerName ?? "player", now);
@@ -283,7 +284,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 
         if (enemyKill)
         {
-            CheckSmokeKill(attacker, victim!, st, now);
+            CheckSmokeKill(attacker, victim!, @event, st, now);
             CheckWallbangKill(attacker, @event, st, now);
         }
 
@@ -314,29 +315,40 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         return HookResult.Continue;
     }
 
-    private void CheckSmokeKill(CCSPlayerController attacker, CCSPlayerController victim, PlayerAcState st, float now)
+    private void CheckSmokeKill(CCSPlayerController attacker, CCSPlayerController victim, EventPlayerDeath @event, PlayerAcState st, float now)
     {
-        if (!Config.SmokeKill.Enabled || _smokes.Count == 0) return;
+        if (!Config.SmokeKill.Enabled) return;
 
-        var aPawn = attacker.PlayerPawn.Value;
-        var vPawn = victim.PlayerPawn.Value;
-        if (aPawn is null || !aPawn.IsValid || vPawn is null || !vPawn.IsValid) return;
+        bool thruSmoke = false;
+        try
+        {
+            // Official CS2 death flag — more reliable than geometry alone.
+            thruSmoke = @event.Thrusmoke;
+        }
+        catch
+        {
+            thruSmoke = false;
+        }
 
-        var aPos = aPawn.AbsOrigin;
-        var vPos = vPawn.AbsOrigin;
-        if (aPos is null || vPos is null) return;
-
-        // Chest-height sample reduces floor/ceiling false geometry misses.
-        float ax = aPos.X, ay = aPos.Y, az = aPos.Z + 64f;
-        float vx = vPos.X, vy = vPos.Y, vz = vPos.Z + 64f;
-
-        if (!IsSmokeBlockingLos(ax, ay, az, vx, vy, vz)) return;
+        if (!thruSmoke)
+        {
+            // Fallback geometry if event flag unavailable / false negative.
+            if (_smokes.Count == 0) return;
+            var aPawn = attacker.PlayerPawn.Value;
+            var vPawn = victim.PlayerPawn.Value;
+            if (aPawn is null || !aPawn.IsValid || vPawn is null || !vPawn.IsValid) return;
+            var aPos = aPawn.AbsOrigin;
+            var vPos = vPawn.AbsOrigin;
+            if (aPos is null || vPos is null) return;
+            if (!IsSmokeBlockingLos(aPos.X, aPos.Y, aPos.Z + 64f, vPos.X, vPos.Y, vPos.Z + 64f))
+                return;
+        }
 
         st.SmokeKills++;
         if (st.SmokeKills >= Config.SmokeKill.KillsThreshold)
         {
             AddScore(attacker, st, "SmokeKill", Config.SmokeKill.Score, now,
-                $"kill through smoke x{st.SmokeKills}");
+                $"thru_smoke kill x{st.SmokeKills}");
             st.SmokeKills = 0;
         }
     }
@@ -345,14 +357,14 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
     {
         if (!Config.Wallbang.Enabled) return;
 
-        int penetrated;
+        int penetrated = 0;
         try
         {
             penetrated = @event.Penetrated;
         }
         catch
         {
-            return;
+            penetrated = 0;
         }
 
         if (penetrated < Config.Wallbang.MinPenetrations) return;
@@ -414,6 +426,8 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 
     private void ProcessActions(CCSPlayerController player, PlayerAcState st, float now)
     {
+        if (IsExemptFromPunishment(player)) return;
+
         var a = Config.Actions;
         if (st.Score >= a.AlertThreshold && !st.AlertSent && a.AnnounceToAdmins)
         {
@@ -480,7 +494,13 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         }
     }
 
-    private bool IsExempt(CCSPlayerController player)
+    private bool IsExemptFromDetection(CCSPlayerController player)
+    {
+        if (!Config.ExemptAdminsFromDetection) return false;
+        return AdminManager.PlayerHasPermissions(player, Config.AdminFlag);
+    }
+
+    private bool IsExemptFromPunishment(CCSPlayerController player)
     {
         if (!Config.ExemptAdmins) return false;
         return AdminManager.PlayerHasPermissions(player, Config.AdminFlag);
@@ -488,6 +508,15 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 
     private static bool IsValidHuman(CCSPlayerController? player)
         => player is not null && player.IsValid && !player.IsBot && !player.IsHLTV && player.Connected == PlayerConnectedState.PlayerConnected;
+
+    private void OnDebug(CCSPlayerController? player, CommandInfo info)
+    {
+        if (player is null || !player.IsValid) return;
+        _scores.TryGet(player.Slot, out var st);
+        info.ReplyToCommand(
+            $"[YGuardAC] debug score={(st?.Score ?? 0):F1} smokeKills={st?.SmokeKills ?? 0} wallKills={st?.WallbangKills ?? 0} " +
+            $"activeSmokes={_smokes.Count} detectExempt={IsExemptFromDetection(player)} punishExempt={IsExemptFromPunishment(player)}");
+    }
 
     private void OnSelfScore(CCSPlayerController? player, CommandInfo info)
     {
