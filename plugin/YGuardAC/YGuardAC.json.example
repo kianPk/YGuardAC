@@ -1,0 +1,79 @@
+{
+  "Enabled": true,
+  "VerboseConsole": true,
+  "ExemptAdmins": true,
+  "AdminFlag": "@css/ban",
+  "Score": {
+    "MaxScore": 200.0,
+    "MaxSingleAddition": 20.0,
+    "DecayPerSecond": 0.6,
+    "FloorPercentOfPeak": 0.08,
+    "ModuleCooldownSeconds": 1.0
+  },
+  "Actions": {
+    "AlertThreshold": 40.0,
+    "KickThreshold": 90.0,
+    "BanThreshold": 90.0,
+    "KickCooldownSeconds": 300.0,
+    "BanMinKicks": 0,
+    "AnnounceToAdmins": true,
+    "BanCommand": "css_ban #{userid} 0 \"YGuardAC auto-ban (score {score:F0})\"",
+    "KickReason": "YGuardAC: suspicion score too high"
+  },
+  "RapidFire": {
+    "Enabled": true,
+    "ToleranceMultiplier": 0.82,
+    "Threshold": 6,
+    "Score": 8.0
+  },
+  "Speedhack": {
+    "Enabled": true,
+    "MaxSpeed": 338.0,
+    "ConsecutiveTicks": 35,
+    "Score": 10.0
+  },
+  "BunnyHop": {
+    "Enabled": true,
+    "PerfectChain": 14,
+    "MaxGroundTicks": 3,
+    "Score": 4.0
+  },
+  "Spinbot": {
+    "Enabled": true,
+    "MinDegPerSecond": 2200.0,
+    "ConsecutiveTicks": 20,
+    "Score": 15.0
+  },
+  "UntrustedAngles": {
+    "Enabled": true,
+    "MaxPitch": 89.5,
+    "Score": 12.0
+  },
+  "AimSnap": {
+    "Enabled": true,
+    "MinSnapDegrees": 65.0,
+    "SnapToKillWindowSeconds": 0.25,
+    "Occurrences": 6,
+    "Score": 3.5
+  },
+  "Grief": {
+    "Enabled": true,
+    "TeamKillThreshold": 3,
+    "TeamKillScore": 5.0,
+    "TeamDamageHp": 400,
+    "TeamDamageScore": 3.0
+  },
+  "SmokeKill": {
+    "Enabled": true,
+    "Radius": 150.0,
+    "DurationSeconds": 18.0,
+    "KillsThreshold": 3,
+    "Score": 6.0
+  },
+  "Wallbang": {
+    "Enabled": true,
+    "MinPenetrations": 1,
+    "KillsThreshold": 3,
+    "Score": 6.0
+  }
+}

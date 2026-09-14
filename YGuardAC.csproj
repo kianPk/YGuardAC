@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>YGuardAC</RootNamespace>
+    <AssemblyName>YGuardAC</AssemblyName>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.318" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="CounterStrikeSharp.API" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>
