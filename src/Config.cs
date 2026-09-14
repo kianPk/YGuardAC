@@ -54,7 +54,7 @@ public sealed class ActionsConfig
     public bool CancelMatchOnCheat { get; set; } = true;
     /// <summary>After a cheat kick/ban, quit the CS2 process (ends the match pod).</summary>
     public bool QuitServerOnCheat { get; set; } = true;
-    public float AbortDelaySeconds { get; set; } = 4f;
+    public float AbortDelaySeconds { get; set; } = 6f;
     /// <summary>Optional. Falls back to env HASURA_GRAPHQL_ADMIN_SECRET.</summary>
     public string HasuraAdminSecret { get; set; } = "";
     /// <summary>Optional. Defaults to {API_DOMAIN}/v1/graphql.</summary>

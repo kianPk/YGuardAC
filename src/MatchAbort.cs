@@ -7,10 +7,23 @@ namespace YGuardAC;
 
 internal static class MatchAbort
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(8) };
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(12) };
     private static int _abortStarted;
+    private static string? _cachedMatchId;
+    private static readonly object CacheLock = new();
 
     public static bool AlreadyStarted => Volatile.Read(ref _abortStarted) == 1;
+
+    public static void RememberMatchId(string? matchId)
+    {
+        if (string.IsNullOrWhiteSpace(matchId)) return;
+        lock (CacheLock) _cachedMatchId = matchId.Trim();
+    }
+
+    public static string? GetCachedMatchId()
+    {
+        lock (CacheLock) return _cachedMatchId;
+    }
 
     public static void Begin(YGuardACConfig config, string reason, Action<float, Action> scheduleOnMainThread)
     {
@@ -27,35 +40,61 @@ internal static class MatchAbort
 
         bool cancel = config.Actions.CancelMatchOnCheat;
         bool quit = config.Actions.QuitServerOnCheat;
-        float delay = Math.Clamp(config.Actions.AbortDelaySeconds, 1f, 30f);
+        float delayAfterCancel = Math.Clamp(config.Actions.AbortDelaySeconds, 2f, 30f);
 
-        if (cancel)
+        _ = Task.Run(async () =>
         {
-            _ = Task.Run(async () =>
+            try
             {
-                try { await CancelCurrentMatchAsync(config); }
-                catch (Exception ex) { Console.WriteLine($"[YGuardAC] CancelMatch failed: {ex.Message}"); }
-            });
+                if (cancel)
+                    await CancelCurrentMatchAsync(config);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[YGuardAC] CancelMatch failed: {ex.Message}");
+            }
+            finally
+            {
+                if (quit)
+                {
+                    // Quit only AFTER cancel attempt finishes.
+                    Server.NextFrame(() =>
+                    {
+                        scheduleOnMainThread(delayAfterCancel, () =>
+                        {
+                            Console.WriteLine("[YGuardAC] Quitting server after cheat abort.");
+                            Server.ExecuteCommand("quit");
+                        });
+                    });
+                }
+            }
+        });
+    }
+
+    public static async Task RefreshMatchIdCacheAsync()
+    {
+        try
+        {
+            string? id = await TryGetCurrentMatchIdAsync();
+            if (!string.IsNullOrWhiteSpace(id))
+                RememberMatchId(id);
         }
-
-        if (quit)
+        catch (Exception ex)
         {
-            scheduleOnMainThread(delay, () =>
-            {
-                Console.WriteLine("[YGuardAC] Quitting server after cheat abort.");
-                Server.ExecuteCommand("quit");
-            });
+            Console.WriteLine($"[YGuardAC] match-id refresh failed: {ex.Message}");
         }
     }
 
     private static async Task CancelCurrentMatchAsync(YGuardACConfig config)
     {
-        string? matchId = await TryGetCurrentMatchIdAsync();
+        string? matchId = GetCachedMatchId() ?? await TryGetCurrentMatchIdAsync();
         if (string.IsNullOrWhiteSpace(matchId))
         {
             Console.WriteLine("[YGuardAC] No current match id — cannot cancel on panel.");
             return;
         }
+
+        RememberMatchId(matchId);
 
         string? secret = FirstNonEmpty(
             config.Actions.HasuraAdminSecret,
@@ -64,19 +103,26 @@ internal static class MatchAbort
 
         if (string.IsNullOrWhiteSpace(secret))
         {
-            Console.WriteLine("[YGuardAC] No Hasura admin secret — set Actions.HasuraAdminSecret or env HASURA_GRAPHQL_ADMIN_SECRET. Server will still quit.");
+            Console.WriteLine("[YGuardAC] No Hasura admin secret — set Actions.HasuraAdminSecret.");
             return;
         }
 
-        string? gqlUrl = FirstNonEmpty(
-            config.Actions.GraphqlUrl,
-            Environment.GetEnvironmentVariable("HASURA_GRAPHQL_ENDPOINT"),
-            BuildDefaultGraphqlUrl());
-
-        if (string.IsNullOrWhiteSpace(gqlUrl))
+        var urls = new List<string>();
+        void AddUrl(string? u)
         {
-            Console.WriteLine("[YGuardAC] No GraphQL URL.");
-            return;
+            if (!string.IsNullOrWhiteSpace(u) && !urls.Contains(u, StringComparer.OrdinalIgnoreCase))
+                urls.Add(u.Trim().TrimEnd('/'));
+        }
+
+        AddUrl(config.Actions.GraphqlUrl);
+        AddUrl(Environment.GetEnvironmentVariable("HASURA_GRAPHQL_ENDPOINT"));
+        AddUrl(BuildDefaultGraphqlUrl());
+        // Common self-host variants
+        string? api = Environment.GetEnvironmentVariable("API_DOMAIN");
+        if (!string.IsNullOrWhiteSpace(api))
+        {
+            string baseUrl = api.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? api.TrimEnd('/') : $"https://{api.TrimEnd('/')}";
+            AddUrl($"{baseUrl}/v1/graphql");
         }
 
         var body = new
@@ -89,14 +135,30 @@ internal static class MatchAbort
 }",
             variables = new { id = matchId }
         };
+        string json = JsonSerializer.Serialize(body);
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, gqlUrl);
-        req.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        req.Headers.Add("x-hasura-admin-secret", secret);
+        foreach (var gqlUrl in urls)
+        {
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Post, gqlUrl);
+                req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                req.Headers.Add("x-hasura-admin-secret", secret);
 
-        using var resp = await Http.SendAsync(req);
-        string respBody = await resp.Content.ReadAsStringAsync();
-        Console.WriteLine($"[YGuardAC] CancelMatch {matchId} HTTP {(int)resp.StatusCode}: {respBody}");
+                using var resp = await Http.SendAsync(req);
+                string respBody = await resp.Content.ReadAsStringAsync();
+                Console.WriteLine($"[YGuardAC] CancelMatch {matchId} via {gqlUrl} => HTTP {(int)resp.StatusCode}: {respBody}");
+
+                if (resp.IsSuccessStatusCode && respBody.Contains("Canceled", StringComparison.OrdinalIgnoreCase))
+                    return;
+                if (resp.IsSuccessStatusCode && respBody.Contains("\"status\"", StringComparison.Ordinal))
+                    return;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[YGuardAC] Cancel via {gqlUrl} error: {ex.Message}");
+            }
+        }
     }
 
     private static async Task<string?> TryGetCurrentMatchIdAsync()
@@ -107,7 +169,7 @@ internal static class MatchAbort
         string? api = Environment.GetEnvironmentVariable("API_DOMAIN");
 
         if (string.IsNullOrWhiteSpace(serverId) || string.IsNullOrWhiteSpace(apiPassword) || string.IsNullOrWhiteSpace(api))
-            return fromEnv;
+            return fromEnv ?? GetCachedMatchId();
 
         string baseUrl = api.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? api.TrimEnd('/') : $"https://{api.TrimEnd('/')}";
         string url = $"{baseUrl}/matches/current-match/{serverId}";
@@ -116,24 +178,25 @@ internal static class MatchAbort
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiPassword);
 
         using var resp = await Http.SendAsync(req);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NoContent)
+            return fromEnv ?? GetCachedMatchId();
+
         if (!resp.IsSuccessStatusCode)
         {
             Console.WriteLine($"[YGuardAC] current-match HTTP {(int)resp.StatusCode}");
-            return fromEnv;
+            return fromEnv ?? GetCachedMatchId();
         }
 
-        await using var stream = await resp.Content.ReadAsStreamAsync();
-        using var doc = await JsonDocument.ParseAsync(stream);
+        string text = await resp.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(text))
+            return fromEnv ?? GetCachedMatchId();
+
+        using var doc = JsonDocument.Parse(text);
         if (doc.RootElement.ValueKind == JsonValueKind.Object &&
             doc.RootElement.TryGetProperty("id", out var idProp))
-            return idProp.GetString() ?? fromEnv;
+            return idProp.GetString() ?? fromEnv ?? GetCachedMatchId();
 
-        if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-            doc.RootElement.TryGetProperty("match", out var match) &&
-            match.TryGetProperty("id", out var nested))
-            return nested.GetString() ?? fromEnv;
-
-        return fromEnv;
+        return fromEnv ?? GetCachedMatchId();
     }
 
     private static string? BuildDefaultGraphqlUrl()

@@ -10,7 +10,7 @@ namespace YGuardAC;
 public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 {
     public override string ModuleName => "YGuardAC";
-    public override string ModuleVersion => "1.2.0";
+    public override string ModuleVersion => "1.2.1";
     public override string ModuleAuthor => "yguard";
     public override string ModuleDescription => "Suspicion-score anti-cheat with kick/ban thresholds";
 
@@ -88,7 +88,19 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         AddCommand("css_ygac_reset", "Reset a player score by userid", OnResetScore);
         AddCommand("css_ygac_debug", "Debug smoke/wallbang counters", OnDebug);
 
-        Console.WriteLine("[YGuardAC] Loaded v1.2.0 — 10m score reset + cancel match/quit on cheat.");
+        Console.WriteLine("[YGuardAC] Loaded v1.2.1 — cancel match before quit; cache match id.");
+
+        // Warm match-id cache so cancel still works after kick.
+        _ = Task.Run(async () =>
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                await MatchAbort.RefreshMatchIdCacheAsync();
+                await Task.Delay(5000);
+            }
+        });
+        AddTimer(30f, () => { _ = MatchAbort.RefreshMatchIdCacheAsync(); },
+            CounterStrikeSharp.API.Modules.Timers.TimerFlags.REPEAT);
     }
 
     public override void Unload(bool hotReload)
