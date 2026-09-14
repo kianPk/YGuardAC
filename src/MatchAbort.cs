@@ -127,8 +127,9 @@ internal static class MatchAbort
 
         var body = new
         {
+            // Hasura wants e_match_status_enum literals, not quoted strings.
             query = @"mutation CancelByAc($id: uuid!) {
-  update_matches_by_pk(pk_columns: { id: $id }, _set: { status: ""Canceled"" }) {
+  update_matches_by_pk(pk_columns: { id: $id }, _set: { status: Canceled }) {
     id
     status
   }
