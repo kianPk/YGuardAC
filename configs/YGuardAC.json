@@ -7,14 +7,14 @@
   "Score": {
     "MaxScore": 200.0,
     "MaxSingleAddition": 20.0,
-    "DecayPerSecond": 0.6,
-    "FloorPercentOfPeak": 0.08,
-    "ModuleCooldownSeconds": 1.0
+    "DecayPerSecond": 0.15,
+    "FloorPercentOfPeak": 0.0,
+    "ModuleCooldownSeconds": 0.25
   },
   "Actions": {
-    "AlertThreshold": 40.0,
-    "KickThreshold": 90.0,
-    "BanThreshold": 90.0,
+    "AlertThreshold": 30.0,
+    "KickThreshold": 50.0,
+    "BanThreshold": 50.0,
     "KickCooldownSeconds": 300.0,
     "BanMinKicks": 0,
     "AnnounceToAdmins": true,
@@ -69,12 +69,14 @@
     "Radius": 175.0,
     "DurationSeconds": 22.0,
     "KillsThreshold": 1,
-    "Score": 8.0
+    "Score": 12.0,
+    "CooldownSeconds": 0.0
   },
   "Wallbang": {
     "Enabled": true,
     "MinPenetrations": 1,
     "KillsThreshold": 1,
-    "Score": 8.0
+    "Score": 12.0,
+    "CooldownSeconds": 0.0
   }
 }

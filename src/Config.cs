@@ -30,16 +30,16 @@ public sealed class ScoreConfig
 {
     public float MaxScore { get; set; } = 200f;
     public float MaxSingleAddition { get; set; } = 20f;
-    public float DecayPerSecond { get; set; } = 0.6f;
-    public float FloorPercentOfPeak { get; set; } = 0.08f;
-    public float ModuleCooldownSeconds { get; set; } = 1f;
+    public float DecayPerSecond { get; set; } = 0.15f;
+    public float FloorPercentOfPeak { get; set; } = 0f;
+    public float ModuleCooldownSeconds { get; set; } = 0.25f;
 }
 
 public sealed class ActionsConfig
 {
-    public float AlertThreshold { get; set; } = 40f;
-    public float KickThreshold { get; set; } = 90f;
-    public float BanThreshold { get; set; } = 90f;
+    public float AlertThreshold { get; set; } = 30f;
+    public float KickThreshold { get; set; } = 50f;
+    public float BanThreshold { get; set; } = 50f;
     public float KickCooldownSeconds { get; set; } = 300f;
     /// <summary>0 = ban as soon as BanThreshold is reached (checked before kick).</summary>
     public int BanMinKicks { get; set; } = 0;
@@ -109,19 +109,19 @@ public sealed class GriefConfig
 public sealed class SmokeKillConfig
 {
     public bool Enabled { get; set; } = true;
-    /// <summary>Fallback geometry radius if Thrusmoke event flag is missing.</summary>
     public float Radius { get; set; } = 175f;
     public float DurationSeconds { get; set; } = 22f;
-    /// <summary>How many through-smoke kills before adding score (1 = every kill).</summary>
     public int KillsThreshold { get; set; } = 1;
-    public float Score { get; set; } = 8f;
+    public float Score { get; set; } = 12f;
+    /// <summary>0 = no cooldown between scored smoke kills.</summary>
+    public float CooldownSeconds { get; set; } = 0f;
 }
 
 public sealed class WallbangConfig
 {
     public bool Enabled { get; set; } = true;
     public int MinPenetrations { get; set; } = 1;
-    /// <summary>How many wallbang kills before adding score (1 = every kill).</summary>
     public int KillsThreshold { get; set; } = 1;
-    public float Score { get; set; } = 8f;
+    public float Score { get; set; } = 12f;
+    public float CooldownSeconds { get; set; } = 0f;
 }

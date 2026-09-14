@@ -78,18 +78,22 @@ internal sealed class ScoreManager
         st.Score = Math.Max(floor, st.Score - _cfg.DecayPerSecond * dt);
     }
 
-    public float Add(PlayerAcState st, string module, float amount, float now, out bool applied)
+    public float Add(PlayerAcState st, string module, float amount, float now, out bool applied, float? cooldownSeconds = null)
     {
         Decay(st, now);
         applied = false;
 
-        if (st.ModuleCooldownUntil.TryGetValue(module, out float until) && now < until)
+        float cd = cooldownSeconds ?? _cfg.ModuleCooldownSeconds;
+        if (cd > 0f &&
+            st.ModuleCooldownUntil.TryGetValue(module, out float until) &&
+            now < until)
             return st.Score;
 
         float add = Math.Clamp(amount, 0f, _cfg.MaxSingleAddition);
         st.Score = Math.Min(_cfg.MaxScore, st.Score + add);
         st.PeakScore = Math.Max(st.PeakScore, st.Score);
-        st.ModuleCooldownUntil[module] = now + _cfg.ModuleCooldownSeconds;
+        if (cd > 0f)
+            st.ModuleCooldownUntil[module] = now + cd;
         applied = true;
         return st.Score;
     }

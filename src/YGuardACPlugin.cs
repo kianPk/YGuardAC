@@ -10,7 +10,7 @@ namespace YGuardAC;
 public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 {
     public override string ModuleName => "YGuardAC";
-    public override string ModuleVersion => "1.1.3";
+    public override string ModuleVersion => "1.1.4";
     public override string ModuleAuthor => "yguard";
     public override string ModuleDescription => "Suspicion-score anti-cheat with kick/ban thresholds";
 
@@ -47,7 +47,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         AddCommand("css_ygac_reset", "Reset a player score by userid", OnResetScore);
         AddCommand("css_ygac_debug", "Debug smoke/wallbang counters", OnDebug);
 
-        Console.WriteLine("[YGuardAC] Loaded v1.1.3 — smoke entity scan + Thrusmoke.");
+        Console.WriteLine("[YGuardAC] Loaded v1.1.4 — smoke/wallbang score accumulate + ban@50.");
     }
 
     public override void Unload(bool hotReload)
@@ -382,9 +382,11 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         st.LastKillDebug += $" | smokeYES:{reason}";
         if (st.SmokeKills >= Config.SmokeKill.KillsThreshold)
         {
-            AddScore(attacker, st, "SmokeKill", Config.SmokeKill.Score, now,
-                $"{reason} x{st.SmokeKills}");
-            st.SmokeKills = 0;
+            bool applied = AddScore(attacker, st, "SmokeKill", Config.SmokeKill.Score, now,
+                $"{reason} x{st.SmokeKills}", Config.SmokeKill.CooldownSeconds);
+            // Only clear when score actually applied — otherwise rapid kills were wasted.
+            if (applied)
+                st.SmokeKills = 0;
         }
     }
 
@@ -397,9 +399,10 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         st.LastKillDebug += $" | wallYES:pen={penetrated}";
         if (st.WallbangKills >= Config.Wallbang.KillsThreshold)
         {
-            AddScore(attacker, st, "Wallbang", Config.Wallbang.Score, now,
-                $"penetrated={penetrated} x{st.WallbangKills}");
-            st.WallbangKills = 0;
+            bool applied = AddScore(attacker, st, "Wallbang", Config.Wallbang.Score, now,
+                $"penetrated={penetrated} x{st.WallbangKills}", Config.Wallbang.CooldownSeconds);
+            if (applied)
+                st.WallbangKills = 0;
         }
     }
 
@@ -506,10 +509,10 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         return HookResult.Continue;
     }
 
-    private void AddScore(CCSPlayerController player, PlayerAcState st, string module, float amount, float now, string detail)
+    private bool AddScore(CCSPlayerController player, PlayerAcState st, string module, float amount, float now, string detail, float? cooldownSeconds = null)
     {
-        float score = _scores.Add(st, module, amount, now, out bool applied);
-        if (!applied) return;
+        float score = _scores.Add(st, module, amount, now, out bool applied, cooldownSeconds);
+        if (!applied) return false;
 
         if (Config.VerboseConsole)
             Console.WriteLine($"[YGuardAC] {st.Name} [{st.SteamId}] +{amount:F1} ({module}: {detail}) = {score:F1}");
@@ -518,6 +521,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
             NotifyAdmins($" {st.Name} +{amount:F0} {module} → {score:F0}");
 
         ProcessActions(player, st, now);
+        return true;
     }
 
     private void ProcessActions(CCSPlayerController player, PlayerAcState st, float now)
@@ -573,8 +577,19 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[YGuardAC] BanCommand failed: {ex.Message} — falling back to kick");
-            KickPlayer(player, Config.Actions.KickReason + " (ban fallback)");
+            Console.WriteLine($"[YGuardAC] BanCommand failed: {ex.Message}");
+        }
+
+        // Always enforce removal from the match even if css_ban / SimpleAdmin is missing.
+        KickPlayer(player, Config.Actions.KickReason + " (auto-ban)");
+        try
+        {
+            Server.ExecuteCommand($"banid 0 {st.SteamId}");
+            Server.ExecuteCommand("writeid");
+        }
+        catch
+        {
+            // ignore
         }
 
         _scores.Remove(player.Slot);
