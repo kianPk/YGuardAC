@@ -4,7 +4,7 @@
   "ExemptAdmins": true,
   "ExemptAdminsFromDetection": false,
   "AdminFlag": "@css/ban",
-  "ScoreResetMinutes": 10,
+  "ScoreResetMinutes": 4,
   "Score": {
     "MaxScore": 200.0,
     "MaxSingleAddition": 20.0,
@@ -74,16 +74,16 @@
     "Enabled": true,
     "Radius": 175.0,
     "DurationSeconds": 22.0,
-    "KillsThreshold": 1,
-    "Score": 15.0,
+    "KillsThreshold": 5,
+    "Score": 8.0,
     "CooldownSeconds": 0.0,
     "BanAfterMatchKills": 5
   },
   "Wallbang": {
     "Enabled": true,
     "MinPenetrations": 1,
-    "KillsThreshold": 1,
-    "Score": 15.0,
+    "KillsThreshold": 5,
+    "Score": 8.0,
     "CooldownSeconds": 0.0,
     "BanAfterMatchKills": 5
   }

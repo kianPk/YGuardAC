@@ -2,23 +2,30 @@
   "Enabled": true,
   "VerboseConsole": true,
   "ExemptAdmins": true,
+  "ExemptAdminsFromDetection": false,
   "AdminFlag": "@css/ban",
+  "ScoreResetMinutes": 4,
   "Score": {
     "MaxScore": 200.0,
     "MaxSingleAddition": 20.0,
-    "DecayPerSecond": 0.6,
-    "FloorPercentOfPeak": 0.08,
-    "ModuleCooldownSeconds": 1.0
+    "DecayPerSecond": 0.15,
+    "FloorPercentOfPeak": 0.0,
+    "ModuleCooldownSeconds": 0.25
   },
   "Actions": {
-    "AlertThreshold": 40.0,
-    "KickThreshold": 90.0,
-    "BanThreshold": 90.0,
+    "AlertThreshold": 30.0,
+    "KickThreshold": 50.0,
+    "BanThreshold": 50.0,
     "KickCooldownSeconds": 300.0,
     "BanMinKicks": 0,
     "AnnounceToAdmins": true,
     "BanCommand": "css_ban #{userid} 0 \"YGuardAC auto-ban (score {score:F0})\"",
-    "KickReason": "YGuardAC: suspicion score too high"
+    "KickReason": "YGuardAC: suspicion score too high",
+    "CancelMatchOnCheat": true,
+    "QuitServerOnCheat": true,
+    "AbortDelaySeconds": 4.0,
+    "HasuraAdminSecret": "",
+    "GraphqlUrl": ""
   },
   "RapidFire": {
     "Enabled": true,
@@ -65,15 +72,19 @@
   },
   "SmokeKill": {
     "Enabled": true,
-    "Radius": 150.0,
-    "DurationSeconds": 18.0,
-    "KillsThreshold": 3,
-    "Score": 6.0
+    "Radius": 175.0,
+    "DurationSeconds": 22.0,
+    "KillsThreshold": 5,
+    "Score": 8.0,
+    "CooldownSeconds": 0.0,
+    "BanAfterMatchKills": 5
   },
   "Wallbang": {
     "Enabled": true,
     "MinPenetrations": 1,
-    "KillsThreshold": 3,
-    "Score": 6.0
+    "KillsThreshold": 5,
+    "Score": 8.0,
+    "CooldownSeconds": 0.0,
+    "BanAfterMatchKills": 5
   }
 }

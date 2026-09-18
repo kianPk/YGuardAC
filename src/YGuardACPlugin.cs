@@ -10,7 +10,7 @@ namespace YGuardAC;
 public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 {
     public override string ModuleName => "YGuardAC";
-    public override string ModuleVersion => "1.2.1";
+    public override string ModuleVersion => "1.2.3";
     public override string ModuleAuthor => "yguard";
     public override string ModuleDescription => "Suspicion-score anti-cheat with kick/ban thresholds";
 
@@ -39,6 +39,9 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
     /// </summary>
     private static void MigrateLegacyConfig(YGuardACConfig c)
     {
+        // Always apply the current product defaults for these knobs.
+        c.ScoreResetMinutes = 4f;
+
         if (c.Score.DecayPerSecond > 0.25f)
             c.Score.DecayPerSecond = 0.1f;
         if (c.Score.FloorPercentOfPeak > 0f)
@@ -53,21 +56,16 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         if (c.Actions.AlertThreshold > 35f)
             c.Actions.AlertThreshold = 20f;
 
-        if (c.SmokeKill.Score < 12f)
-            c.SmokeKill.Score = 15f;
-        if (c.SmokeKill.KillsThreshold > 1)
-            c.SmokeKill.KillsThreshold = 1;
+        // Smoke / wallbang: no early kick from score — punish only after N session kills.
         c.SmokeKill.CooldownSeconds = 0f;
-        if (c.SmokeKill.BanAfterMatchKills <= 0)
-            c.SmokeKill.BanAfterMatchKills = 5;
+        c.SmokeKill.BanAfterMatchKills = 5;
+        c.SmokeKill.KillsThreshold = 5; // don't drip score every single kill
+        c.SmokeKill.Score = 8f;
 
-        if (c.Wallbang.Score < 12f)
-            c.Wallbang.Score = 15f;
-        if (c.Wallbang.KillsThreshold > 1)
-            c.Wallbang.KillsThreshold = 1;
         c.Wallbang.CooldownSeconds = 0f;
-        if (c.Wallbang.BanAfterMatchKills <= 0)
-            c.Wallbang.BanAfterMatchKills = 5;
+        c.Wallbang.BanAfterMatchKills = 5;
+        c.Wallbang.KillsThreshold = 5;
+        c.Wallbang.Score = 8f;
     }
 
     public override void Load(bool hotReload)
@@ -88,7 +86,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         AddCommand("css_ygac_reset", "Reset a player score by userid", OnResetScore);
         AddCommand("css_ygac_debug", "Debug smoke/wallbang counters", OnDebug);
 
-        Console.WriteLine("[YGuardAC] Loaded v1.2.1 — cancel match before quit; cache match id.");
+        Console.WriteLine("[YGuardAC] Loaded v1.2.3 — score reset 4m; smoke/wall kick at 5.");
 
         // Warm match-id cache so cancel still works after kick.
         _ = Task.Run(async () =>
@@ -447,7 +445,7 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         st.SmokeKills++;
         st.LastKillDebug += $" | smokeYES:{reason} sessionSmoke={st.SessionSmokeHits}";
 
-        // Always apply score with zero cooldown for smoke (ignore stale global cooldown).
+        // Optional score only after a full burst (won't kick at 3 alone).
         if (st.SmokeKills >= Config.SmokeKill.KillsThreshold)
         {
             bool applied = AddScore(attacker, st, "SmokeKill", Config.SmokeKill.Score, now,
@@ -456,12 +454,13 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
                 st.SmokeKills = 0;
         }
 
-        int banAfter = Math.Max(1, Config.SmokeKill.BanAfterMatchKills);
-        if (st.SessionSmokeHits >= banAfter && !IsExemptFromPunishment(attacker))
+        int kickAfter = Math.Max(1, Config.SmokeKill.BanAfterMatchKills);
+        if (st.SessionSmokeHits >= kickAfter && !IsExemptFromPunishment(attacker))
         {
-            Console.WriteLine($"[YGuardAC] SMOKE-BAN {st.Name} sessionSmoke={st.SessionSmokeHits}");
-            NotifyAdmins($"SMOKE-BAN {st.Name} x{st.SessionSmokeHits} thrusmoke/los");
-            BanPlayer(attacker, st, "smoke-ban");
+            Console.WriteLine($"[YGuardAC] SMOKE-KICK {st.Name} sessionSmoke={st.SessionSmokeHits}");
+            NotifyAdmins($"SMOKE-KICK {st.Name} x{st.SessionSmokeHits} thrusmoke/los");
+            KickPlayer(attacker, "YGuardAC: too many smoke kills");
+            st.SessionSmokeHits = 0;
         }
     }
 
@@ -482,12 +481,13 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
                 st.WallbangKills = 0;
         }
 
-        int banAfter = Math.Max(1, Config.Wallbang.BanAfterMatchKills);
-        if (st.SessionWallHits >= banAfter && !IsExemptFromPunishment(attacker))
+        int kickAfter = Math.Max(1, Config.Wallbang.BanAfterMatchKills);
+        if (st.SessionWallHits >= kickAfter && !IsExemptFromPunishment(attacker))
         {
-            Console.WriteLine($"[YGuardAC] WALL-BAN {st.Name} sessionWall={st.SessionWallHits}");
-            NotifyAdmins($"WALL-BAN {st.Name} x{st.SessionWallHits}");
-            BanPlayer(attacker, st, "wall-ban");
+            Console.WriteLine($"[YGuardAC] WALL-KICK {st.Name} sessionWall={st.SessionWallHits}");
+            NotifyAdmins($"WALL-KICK {st.Name} x{st.SessionWallHits}");
+            KickPlayer(attacker, "YGuardAC: too many wallbang kills");
+            st.SessionWallHits = 0;
         }
     }
 

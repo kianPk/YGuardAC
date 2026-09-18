@@ -16,7 +16,7 @@ public sealed class YGuardACConfig : BasePluginConfig
     [JsonPropertyName("Score")] public ScoreConfig Score { get; set; } = new();
     [JsonPropertyName("Actions")] public ActionsConfig Actions { get; set; } = new();
     /// <summary>Reset each player's score / session counters after this many minutes in the match.</summary>
-    [JsonPropertyName("ScoreResetMinutes")] public float ScoreResetMinutes { get; set; } = 10f;
+    [JsonPropertyName("ScoreResetMinutes")] public float ScoreResetMinutes { get; set; } = 4f;
     [JsonPropertyName("RapidFire")] public RapidFireConfig RapidFire { get; set; } = new();
     [JsonPropertyName("Speedhack")] public SpeedhackConfig Speedhack { get; set; } = new();
     [JsonPropertyName("BunnyHop")] public BunnyHopConfig BunnyHop { get; set; } = new();
@@ -123,11 +123,11 @@ public sealed class SmokeKillConfig
     public bool Enabled { get; set; } = true;
     public float Radius { get; set; } = 175f;
     public float DurationSeconds { get; set; } = 22f;
-    public int KillsThreshold { get; set; } = 1;
-    public float Score { get; set; } = 15f;
+    public int KillsThreshold { get; set; } = 5;
+    public float Score { get; set; } = 8f;
     /// <summary>0 = no cooldown between scored smoke kills.</summary>
     public float CooldownSeconds { get; set; } = 0f;
-    /// <summary>Ban after this many smoke kills in the current match (ignores score decay).</summary>
+    /// <summary>Kick after this many smoke kills in the current match (ignores score decay).</summary>
     public int BanAfterMatchKills { get; set; } = 5;
 }
 
@@ -135,8 +135,9 @@ public sealed class WallbangConfig
 {
     public bool Enabled { get; set; } = true;
     public int MinPenetrations { get; set; } = 1;
-    public int KillsThreshold { get; set; } = 1;
-    public float Score { get; set; } = 15f;
+    public int KillsThreshold { get; set; } = 5;
+    public float Score { get; set; } = 8f;
     public float CooldownSeconds { get; set; } = 0f;
+    /// <summary>Kick after this many wallbang kills in the current match.</summary>
     public int BanAfterMatchKills { get; set; } = 5;
 }
