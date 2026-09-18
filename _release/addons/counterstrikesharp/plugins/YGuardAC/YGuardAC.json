@@ -1,0 +1,90 @@
+{
+  "Enabled": true,
+  "VerboseConsole": true,
+  "ExemptAdmins": true,
+  "ExemptAdminsFromDetection": false,
+  "AdminFlag": "@css/ban",
+  "ScoreResetMinutes": 4,
+  "Score": {
+    "MaxScore": 200.0,
+    "MaxSingleAddition": 20.0,
+    "DecayPerSecond": 0.15,
+    "FloorPercentOfPeak": 0.0,
+    "ModuleCooldownSeconds": 0.25
+  },
+  "Actions": {
+    "AlertThreshold": 30.0,
+    "KickThreshold": 50.0,
+    "BanThreshold": 50.0,
+    "KickCooldownSeconds": 300.0,
+    "BanMinKicks": 0,
+    "AnnounceToAdmins": true,
+    "BanCommand": "css_ban #{userid} 0 \"YGuardAC auto-ban (score {score:F0})\"",
+    "KickReason": "YGuardAC: suspicion score too high",
+    "CancelMatchOnCheat": true,
+    "QuitServerOnCheat": true,
+    "AbortDelaySeconds": 4.0,
+    "HasuraAdminSecret": "",
+    "GraphqlUrl": ""
+  },
+  "RapidFire": {
+    "Enabled": true,
+    "ToleranceMultiplier": 0.82,
+    "Threshold": 6,
+    "Score": 8.0
+  },
+  "Speedhack": {
+    "Enabled": true,
+    "MaxSpeed": 338.0,
+    "ConsecutiveTicks": 35,
+    "Score": 10.0
+  },
+  "BunnyHop": {
+    "Enabled": true,
+    "PerfectChain": 14,
+    "MaxGroundTicks": 3,
+    "Score": 4.0
+  },
+  "Spinbot": {
+    "Enabled": true,
+    "MinDegPerSecond": 2200.0,
+    "ConsecutiveTicks": 20,
+    "Score": 15.0
+  },
+  "UntrustedAngles": {
+    "Enabled": true,
+    "MaxPitch": 89.5,
+    "Score": 12.0
+  },
+  "AimSnap": {
+    "Enabled": true,
+    "MinSnapDegrees": 65.0,
+    "SnapToKillWindowSeconds": 0.25,
+    "Occurrences": 6,
+    "Score": 3.5
+  },
+  "Grief": {
+    "Enabled": true,
+    "TeamKillThreshold": 3,
+    "TeamKillScore": 5.0,
+    "TeamDamageHp": 400,
+    "TeamDamageScore": 3.0
+  },
+  "SmokeKill": {
+    "Enabled": true,
+    "Radius": 175.0,
+    "DurationSeconds": 22.0,
+    "KillsThreshold": 5,
+    "Score": 8.0,
+    "CooldownSeconds": 0.0,
+    "BanAfterMatchKills": 5
+  },
+  "Wallbang": {
+    "Enabled": true,
+    "MinPenetrations": 1,
+    "KillsThreshold": 5,
+    "Score": 8.0,
+    "CooldownSeconds": 0.0,
+    "BanAfterMatchKills": 5
+  }
+}

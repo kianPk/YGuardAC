@@ -10,9 +10,9 @@ namespace YGuardAC;
 public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
 {
     public override string ModuleName => "YGuardAC";
-    public override string ModuleVersion => "1.2.3";
+    public override string ModuleVersion => "1.2.4";
     public override string ModuleAuthor => "yguard";
-    public override string ModuleDescription => "Suspicion-score anti-cheat with kick/ban thresholds";
+    public override string ModuleDescription => "Suspicion-score anti-cheat with kick/ban thresholds + live AC launcher gate";
 
     public YGuardACConfig Config { get; set; } = new();
 
@@ -80,13 +80,14 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         RegisterEventHandler<EventSmokegrenadeDetonate>(OnSmokeDetonate);
         RegisterEventHandler<EventRoundStart>(OnRoundStart);
         RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect);
+        RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull);
 
         AddCommand("css_ygac", "Show your YGuardAC score", OnSelfScore);
         AddCommand("css_ygac_score", "Inspect a player score by userid", OnInspectScore);
         AddCommand("css_ygac_reset", "Reset a player score by userid", OnResetScore);
         AddCommand("css_ygac_debug", "Debug smoke/wallbang counters", OnDebug);
 
-        Console.WriteLine("[YGuardAC] Loaded v1.2.3 — score reset 4m; smoke/wall kick at 5.");
+        Console.WriteLine("[YGuardAC] Loaded v1.2.4 — AC launcher gate on connect + score kick.");
 
         // Warm match-id cache so cancel still works after kick.
         _ = Task.Run(async () =>
@@ -99,6 +100,43 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         });
         AddTimer(30f, () => { _ = MatchAbort.RefreshMatchIdCacheAsync(); },
             CounterStrikeSharp.API.Modules.Timers.TimerFlags.REPEAT);
+
+        // Re-check every player so closing AC mid-match + reconnect via IP still kicks.
+        AddTimer(6f, () =>
+        {
+            if (!Config.Enabled) return;
+            var targets = new List<(ulong steam, int userId)>();
+            foreach (var p in Utilities.GetPlayers())
+            {
+                if (p is null || !p.IsValid || p.IsBot || p.IsHLTV) continue;
+                if (p.Connected != PlayerConnectedState.PlayerConnected) continue;
+                if (p.UserId is not int uid) continue;
+                targets.Add((p.SteamID, uid));
+            }
+            if (targets.Count == 0) return;
+            _ = Task.Run(async () =>
+            {
+                foreach (var (steam, userId) in targets)
+                {
+                    try
+                    {
+                        var (allowed, reason) = await AcGate.CheckAsync(steam);
+                        if (allowed) continue;
+                        Server.NextFrame(() =>
+                        {
+                            var p = Utilities.GetPlayers()
+                                .FirstOrDefault(x => x is not null && x.IsValid && x.UserId == userId);
+                            if (p is null) return;
+                            AcGate.KickIfDenied(p, reason);
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[YGuardAC] AC gate sweep error: {ex.Message}");
+                    }
+                }
+            });
+        }, CounterStrikeSharp.API.Modules.Timers.TimerFlags.REPEAT);
     }
 
     public override void Unload(bool hotReload)
@@ -584,6 +622,29 @@ public sealed class YGuardACPlugin : BasePlugin, IPluginConfig<YGuardACConfig>
         }
 
         return false;
+    }
+
+    private HookResult OnPlayerConnectFull(EventPlayerConnectFull @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+        if (player is null || !player.IsValid || player.IsBot || player.IsHLTV) return HookResult.Continue;
+
+        ulong steam = player.SteamID;
+        if (player.UserId is not int userId) return HookResult.Continue;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(800);
+            var (allowed, reason) = await AcGate.CheckAsync(steam);
+            if (allowed) return;
+            Server.NextFrame(() =>
+            {
+                var p = Utilities.GetPlayers()
+                    .FirstOrDefault(x => x is not null && x.IsValid && x.UserId == userId);
+                if (p is null) return;
+                AcGate.KickIfDenied(p, reason);
+            });
+        });
+        return HookResult.Continue;
     }
 
     public HookResult OnPlayerDisconnect(EventPlayerDisconnect @event, GameEventInfo info)
