@@ -1,0 +1,199 @@
+using System.Text.Json.Serialization;
+using CounterStrikeSharp.API.Core;
+
+namespace YGuardAC;
+
+public sealed class YGuardACConfig : BasePluginConfig
+{
+    [JsonPropertyName("Enabled")] public bool Enabled { get; set; } = true;
+    [JsonPropertyName("VerboseConsole")] public bool VerboseConsole { get; set; } = true;
+    /// <summary>Skip kick/ban for admins. Detection/score still runs unless ExemptAdminsFromDetection.</summary>
+    [JsonPropertyName("ExemptAdmins")] public bool ExemptAdmins { get; set; } = true;
+    /// <summary>If true, admins get no score at all (makes testing as admin look like score=0 forever).</summary>
+    [JsonPropertyName("ExemptAdminsFromDetection")] public bool ExemptAdminsFromDetection { get; set; } = false;
+    [JsonPropertyName("AdminFlag")] public string AdminFlag { get; set; } = "@css/ban";
+
+    [JsonPropertyName("Score")] public ScoreConfig Score { get; set; } = new();
+    [JsonPropertyName("Actions")] public ActionsConfig Actions { get; set; } = new();
+    /// <summary>Reset each player's score / session counters after this many minutes in the match.</summary>
+    [JsonPropertyName("ScoreResetMinutes")] public float ScoreResetMinutes { get; set; } = 4f;
+    [JsonPropertyName("RapidFire")] public RapidFireConfig RapidFire { get; set; } = new();
+    [JsonPropertyName("Speedhack")] public SpeedhackConfig Speedhack { get; set; } = new();
+    [JsonPropertyName("BunnyHop")] public BunnyHopConfig BunnyHop { get; set; } = new();
+    [JsonPropertyName("Spinbot")] public SpinbotConfig Spinbot { get; set; } = new();
+    [JsonPropertyName("UntrustedAngles")] public UntrustedAnglesConfig UntrustedAngles { get; set; } = new();
+    [JsonPropertyName("AimSnap")] public AimSnapConfig AimSnap { get; set; } = new();
+    [JsonPropertyName("Grief")] public GriefConfig Grief { get; set; } = new();
+    [JsonPropertyName("SmokeKill")] public SmokeKillConfig SmokeKill { get; set; } = new();
+    [JsonPropertyName("Wallbang")] public WallbangConfig Wallbang { get; set; } = new();
+    [JsonPropertyName("SilentAim")] public SilentAimConfig SilentAim { get; set; } = new();
+    [JsonPropertyName("BlindHsBurst")] public BlindHsBurstConfig BlindHsBurst { get; set; } = new();
+    [JsonPropertyName("NameChurn")] public NameChurnConfig NameChurn { get; set; } = new();
+}
+
+public sealed class ScoreConfig
+{
+    public float MaxScore { get; set; } = 200f;
+    public float MaxSingleAddition { get; set; } = 20f;
+    public float DecayPerSecond { get; set; } = 0.15f;
+    public float FloorPercentOfPeak { get; set; } = 0f;
+    public float ModuleCooldownSeconds { get; set; } = 0.25f;
+}
+
+public sealed class ActionsConfig
+{
+    public float AlertThreshold { get; set; } = 30f;
+    public float KickThreshold { get; set; } = 50f;
+    public float BanThreshold { get; set; } = 50f;
+    public float KickCooldownSeconds { get; set; } = 300f;
+    /// <summary>0 = ban as soon as BanThreshold is reached (checked before kick).</summary>
+    public int BanMinKicks { get; set; } = 0;
+    public bool AnnounceToAdmins { get; set; } = true;
+    public string BanCommand { get; set; } =
+        "css_ban #{userid} 0 \"YGuardAC auto-ban (score {score:F0})\"";
+    public string KickReason { get; set; } = "YGuardAC: suspicion score too high";
+
+    /// <summary>After a cheat kick/ban, mark the 5stack match Canceled via GraphQL.</summary>
+    public bool CancelMatchOnCheat { get; set; } = true;
+    /// <summary>After a cheat kick/ban, quit the CS2 process (ends the match pod).</summary>
+    public bool QuitServerOnCheat { get; set; } = true;
+    public float AbortDelaySeconds { get; set; } = 6f;
+    /// <summary>Optional. Falls back to env HASURA_GRAPHQL_ADMIN_SECRET.</summary>
+    public string HasuraAdminSecret { get; set; } = "";
+    /// <summary>Optional. Defaults to {API_DOMAIN}/v1/graphql.</summary>
+    public string GraphqlUrl { get; set; } = "";
+}
+
+public sealed class RapidFireConfig
+{
+    public bool Enabled { get; set; } = true;
+    public float ToleranceMultiplier { get; set; } = 0.82f;
+    public int Threshold { get; set; } = 6;
+    public float Score { get; set; } = 8f;
+}
+
+public sealed class SpeedhackConfig
+{
+    public bool Enabled { get; set; } = true;
+    public float MaxSpeed { get; set; } = 338f;
+    public int ConsecutiveTicks { get; set; } = 35;
+    public float Score { get; set; } = 10f;
+}
+
+public sealed class BunnyHopConfig
+{
+    public bool Enabled { get; set; } = true;
+    public int PerfectChain { get; set; } = 14;
+    public int MaxGroundTicks { get; set; } = 3;
+    public float Score { get; set; } = 4f;
+}
+
+public sealed class SpinbotConfig
+{
+    /// <summary>
+    /// Off by default: high mouse DPI + spinning in spawn easily hits 2200°/s
+    /// and was cancelling real matches (score kick → CancelMatchOnCheat).
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+    /// <summary>Only flag if yaw stays above this for ConsecutiveTicks (real spinbots are far higher).</summary>
+    public float MinDegPerSecond { get; set; } = 7200f;
+    public int ConsecutiveTicks { get; set; } = 48;
+    public float Score { get; set; } = 8f;
+}
+
+public sealed class UntrustedAnglesConfig
+{
+    public bool Enabled { get; set; } = true;
+    public float MaxPitch { get; set; } = 89.5f;
+    public float Score { get; set; } = 12f;
+}
+
+public sealed class AimSnapConfig
+{
+    public bool Enabled { get; set; } = true;
+    public float MinSnapDegrees { get; set; } = 65f;
+    public float SnapToKillWindowSeconds { get; set; } = 0.25f;
+    public int Occurrences { get; set; } = 3;
+    public float Score { get; set; } = 3.5f;
+    /// <summary>OSAC-style: previous sample must be at least this far off target.</summary>
+    public float ApproachMinDeg { get; set; } = 5f;
+    /// <summary>OSAC-style: at kill tick, view must land within this of head/chest.</summary>
+    public float SnapOnTargetMaxDeg { get; set; } = 0.5f;
+    /// <summary>Direct kick after this many precision snaps in the match.</summary>
+    public int BanAfterMatchHits { get; set; } = 4;
+}
+
+public sealed class GriefConfig
+{
+    public bool Enabled { get; set; } = true;
+    public int TeamKillThreshold { get; set; } = 3;
+    public float TeamKillScore { get; set; } = 5f;
+    public int TeamDamageHp { get; set; } = 400;
+    public float TeamDamageScore { get; set; } = 3f;
+}
+
+public sealed class SmokeKillConfig
+{
+    public bool Enabled { get; set; } = true;
+    public float Radius { get; set; } = 175f;
+    public float DurationSeconds { get; set; } = 22f;
+    public int KillsThreshold { get; set; } = 5;
+    public float Score { get; set; } = 8f;
+    /// <summary>0 = no cooldown between scored smoke kills.</summary>
+    public float CooldownSeconds { get; set; } = 0f;
+    /// <summary>Kick after this many smoke kills in the current match (ignores score decay).</summary>
+    public int BanAfterMatchKills { get; set; } = 5;
+}
+
+public sealed class WallbangConfig
+{
+    public bool Enabled { get; set; } = true;
+    public int MinPenetrations { get; set; } = 1;
+    public int KillsThreshold { get; set; } = 5;
+    public float Score { get; set; } = 8f;
+    public float CooldownSeconds { get; set; } = 0f;
+    /// <summary>Kick after this many wallbang kills in the current match.</summary>
+    public int BanAfterMatchKills { get; set; } = 5;
+}
+
+public sealed class SilentAimConfig
+{
+    public bool Enabled { get; set; } = true;
+    /// <summary>View must be at least this far from every lag-comp victim sample.</summary>
+    public float OffDegrees { get; set; } = 10f;
+    public float MinRange { get; set; } = 128f;
+    public float BurstWindowSeconds { get; set; } = 0.25f;
+    public float Score { get; set; } = 10f;
+    /// <summary>Score after this many qualifying off-view hits (also used as soft gate).</summary>
+    public int MinHits { get; set; } = 3;
+    /// <summary>Direct kick after this many qualifying silent hits in the match.</summary>
+    public int KickAfterHits { get; set; } = 3;
+    public float FarOffDegrees { get; set; } = 4f;
+    public float FarMinRange { get; set; } = 700f;
+    /// <summary>Far-precision head hits on distinct victims before kick.</summary>
+    public int FarKickDistinctVictims { get; set; } = 2;
+    public float ScoreFar { get; set; } = 8f;
+}
+
+public sealed class BlindHsBurstConfig
+{
+    public bool Enabled { get; set; } = true;
+    public float WindowSeconds { get; set; } = 15f;
+    public float BlindAfterSeconds { get; set; } = 30f;
+    /// <summary>Distinct blind HS victims before score/admin alert.</summary>
+    public int ScoreAtDistinct { get; set; } = 2;
+    public float Score { get; set; } = 12f;
+    /// <summary>Distinct blind HS victims in the window → direct kick.</summary>
+    public int KickAtDistinct { get; set; } = 4;
+    /// <summary>How often (seconds) to poll spotted / LOS memory.</summary>
+    public float PollSeconds { get; set; } = 0.1f;
+}
+
+public sealed class NameChurnConfig
+{
+    public bool Enabled { get; set; } = true;
+    public int MinChanges { get; set; } = 3;
+    public float WindowSeconds { get; set; } = 20f;
+    public bool Kick { get; set; } = true;
+    public float Score { get; set; } = 15f;
+}

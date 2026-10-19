@@ -1,0 +1,158 @@
+namespace YGuardAC;
+
+internal sealed class PlayerAcState
+{
+    public ulong SteamId;
+    public string Name = "";
+    public float Score;
+    public float PeakScore;
+    public float LastUpdateTime;
+    public int KickCount;
+    public float LastKickTime = -9999f;
+    public bool AlertSent;
+
+    public float Pitch;
+    public float Yaw;
+    public bool HasAngles;
+    public bool OnGround;
+    public int GroundTicks;
+    public int PerfectBhopChain;
+    public int SpeedOverTicks;
+    public int SpinTicks;
+    public int RapidFireHits;
+    public int TeamKills;
+    public float TeamDamage;
+    public int SnapKillHits;
+    public int SessionSnapHits;
+    public int SmokeKills;
+    public int WallbangKills;
+    public int SessionSmokeHits;
+    public int SessionWallHits;
+    public int DeathEventsSeen;
+    public float ScoreWindowStart = -1f;
+    public string LastKillDebug = "none";
+
+    public string? LastWeapon;
+    public float LastFireTime = -9999f;
+    /// <summary>True when the most recent WeaponFire opened a new burst (silent-aim gate).</summary>
+    public bool LastFireWasBurstOpener = true;
+    public float LastSnapTime = -9999f;
+    public float LastSnapDegrees;
+
+    // Previous tick view (for Snap v2 approach check).
+    public float PrevPitch;
+    public float PrevYaw;
+    public bool HasPrevAngles;
+
+    // Silent aim
+    public int SilentHits;
+    public int SessionSilentHits;
+    public readonly HashSet<int> FarSilentVictims = new();
+    public int BlindScoreTierFired;
+    public int BlindKickFired;
+
+    // Name churn
+    public string TrackedName = "";
+    public readonly List<float> NameChangeTimes = new();
+
+    public readonly PositionHistory Positions = new(40);
+    public readonly Dictionary<string, float> ModuleCooldownUntil = new(StringComparer.OrdinalIgnoreCase);
+}
+
+internal sealed class ScoreManager
+{
+    private readonly Dictionary<int, PlayerAcState> _players = new();
+    private readonly ScoreConfig _cfg;
+
+    public ScoreManager(ScoreConfig cfg) => _cfg = cfg;
+
+    public IReadOnlyDictionary<int, PlayerAcState> Players => _players;
+
+    public PlayerAcState GetOrCreate(int slot, ulong steamId, string name, float now)
+    {
+        if (!_players.TryGetValue(slot, out var st))
+        {
+            st = new PlayerAcState
+            {
+                SteamId = steamId,
+                Name = name,
+                TrackedName = name,
+                LastUpdateTime = now,
+            };
+            _players[slot] = st;
+        }
+        else
+        {
+            st.SteamId = steamId;
+            st.Name = name;
+            if (string.IsNullOrEmpty(st.TrackedName))
+                st.TrackedName = name;
+        }
+
+        Decay(st, now);
+        return st;
+    }
+
+    public bool TryGet(int slot, out PlayerAcState st) => _players.TryGetValue(slot, out st!);
+
+    public void Remove(int slot) => _players.Remove(slot);
+
+    public void Clear() => _players.Clear();
+
+    public void Decay(PlayerAcState st, float now)
+    {
+        float dt = Math.Max(0f, now - st.LastUpdateTime);
+        st.LastUpdateTime = now;
+        if (dt <= 0f || st.Score <= 0f) return;
+
+        float floor = st.PeakScore * _cfg.FloorPercentOfPeak;
+        st.Score = Math.Max(floor, st.Score - _cfg.DecayPerSecond * dt);
+    }
+
+    public float Add(PlayerAcState st, string module, float amount, float now, out bool applied, float? cooldownSeconds = null)
+    {
+        Decay(st, now);
+        applied = false;
+
+        float cd = cooldownSeconds ?? _cfg.ModuleCooldownSeconds;
+        if (cd > 0f &&
+            st.ModuleCooldownUntil.TryGetValue(module, out float until) &&
+            now < until)
+            return st.Score;
+
+        float add = Math.Clamp(amount, 0f, _cfg.MaxSingleAddition);
+        st.Score = Math.Min(_cfg.MaxScore, st.Score + add);
+        st.PeakScore = Math.Max(st.PeakScore, st.Score);
+        if (cd > 0f)
+            st.ModuleCooldownUntil[module] = now + cd;
+        applied = true;
+        return st.Score;
+    }
+
+    public void ResetScoreWindow(PlayerAcState st, float now)
+    {
+        st.Score = 0f;
+        st.PeakScore = 0f;
+        st.AlertSent = false;
+        st.SmokeKills = 0;
+        st.WallbangKills = 0;
+        st.SessionSmokeHits = 0;
+        st.SessionWallHits = 0;
+        st.SessionSnapHits = 0;
+        st.SilentHits = 0;
+        st.SessionSilentHits = 0;
+        st.FarSilentVictims.Clear();
+        st.BlindScoreTierFired = 0;
+        st.BlindKickFired = 0;
+        st.RapidFireHits = 0;
+        st.SnapKillHits = 0;
+        st.PerfectBhopChain = 0;
+        st.SpeedOverTicks = 0;
+        st.SpinTicks = 0;
+        st.TeamKills = 0;
+        st.TeamDamage = 0;
+        st.ModuleCooldownUntil.Clear();
+        st.ScoreWindowStart = now;
+        st.LastUpdateTime = now;
+    }
+}

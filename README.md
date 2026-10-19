@@ -6,28 +6,37 @@ Same idea as [CS2AntiCheat](https://github.com/jaycs1723658/CS2AntiCheat): modul
 
 Uses **`pawn.V_angle`** (not broken `EyeAngles`).
 
+Several hard edges are inspired by [OSAntiCheat](https://github.com/Pintuzoft/OSAntiCheat) concepts (no code copied): silent aim, precision snap, blind HS burst, name churn.
+
 ## What it detects
 
-| Module | Signal |
-|--------|--------|
-| RapidFire | Shots faster than weapon cycle |
-| Speedhack | Ground speed above limit for many ticks |
-| BunnyHop | Long perfect tick-ground hop chains |
-| Spinbot | Sustained extreme yaw rate |
-| UntrustedAngles | Impossible pitch |
-| AimSnap | Huge snap then kill (repeat) |
-| Grief | Team damage / team kills |
-| SmokeKill | Enemy kills while LOS crosses active smoke |
-| Wallbang | Enemy kills with wall penetration (`Penetrated`) |
+| Module | Signal | Edge |
+|--------|--------|------|
+| RapidFire | Shots faster than weapon cycle | score |
+| Speedhack | Ground speed above limit for many ticks | score |
+| BunnyHop | Long perfect tick-ground hop chains | score |
+| Spinbot | Sustained extreme yaw rate (off by default) | score |
+| UntrustedAngles | Impossible pitch | score |
+| AimSnap | Large snap then kill **or** approach≥5° → land≤0.5° | score + kick after N |
+| Grief | Team damage / team kills | score |
+| SmokeKill | Enemy kills while LOS crosses active smoke | kick after N |
+| Wallbang | Enemy kills with wall penetration | kick after N |
+| SilentAim | Burst-opener damage while view ≥10° off victim (lag-comp) | score + kick after N |
+| SilentAimFar | Far precision headshots ≥4° off (distinct victims) | kick at 2 |
+| BlindHsBurst | ≥4 distinct blind headshot kills in 15s | kick |
+| NameChurn | ≥3 renames in 20s | kick |
 
-Soft aim / silent light cheats are **not** reliably caught server-side.
+Soft aim / wallhack without geometry are **not** fully covered server-side.
 
 ## Defaults (editable in config)
 
 - Alert ≥ **40** (admin chat)
 - Kick ≥ **90**
 - Ban ≥ **90** with `BanMinKicks: 0` → **bans as soon as score hits 90**
-- If you want kick-then-ban like CS2AntiCheat: set `BanThreshold: 120`, `BanMinKicks: 3`
+- SilentAim kick after **3** off-view burst openers
+- AimSnap kick after **4** precision snaps
+- BlindHsBurst kick at **4** distinct blind HS in 15s
+- NameChurn kick at **3** renames / 20s
 
 Ban runs:
 
@@ -37,10 +46,9 @@ css_ban #{userid} 0 "YGuardAC auto-ban (score …)"
 
 Needs **SimpleAdmin** (or change `BanCommand`). Without it, change command or expect fallback kick only if command fails.
 
-## Build (Linux game node / any machine with .NET 8 SDK)
+## Build
 
 ```bash
-sudo apt install -y dotnet-sdk-8.0   # if needed
 cd YGuardAC
 dotnet build -c Release
 ```
@@ -48,40 +56,22 @@ dotnet build -c Release
 Output:
 
 ```text
-bin/Release/net8.0/YGuardAC.dll
+bin/Release/net10.0/YGuardAC.dll
 ```
 
-## Install from GitHub (5stack / yguard panel)
+## Install
 
-1. Upload this repo to GitHub (public is easiest for the panel zip download).
-2. In **Panel → Plugins / Plugin Directory → Custom / Install from URL** use:
+Copy `YGuardAC.dll` to:
 
 ```text
-https://github.com/<USER>/<REPO>/archive/refs/heads/main.zip
+addons/counterstrikesharp/plugins/YGuardAC/
 ```
 
-3. Typical fields (same style as other CSS plugins):
-   - **Layout:** `plugin` (or whatever your panel calls “folder already contains the plugin”)
-   - **Path:** `addons/counterstrikesharp/plugins/YGuardAC`
-   - Source folder inside the zip: `plugin/YGuardAC` (contains `YGuardAC.dll`)
-
-If the panel only accepts a raw plugin folder zip, zip just `plugin/YGuardAC/` and upload that, or use a GitHub **Release** asset.
-
-### Manual on game node
-
-```bash
-mkdir -p /opt/5stack/custom-plugins/addons/counterstrikesharp/plugins/YGuardAC
-# copy YGuardAC.dll from plugin/YGuardAC/
-```
-
-### Ban command
-
-Needs SimpleAdmin (or change `BanCommand` in config). Config appears after first load under:
+Config appears after first load under:
 
 ```text
 addons/counterstrikesharp/configs/plugins/YGuardAC/YGuardAC.json
 ```
-
 
 ## Commands
 
@@ -90,13 +80,14 @@ addons/counterstrikesharp/configs/plugins/YGuardAC/YGuardAC.json
 | `css_ygac` | player | own score |
 | `css_ygac_score <userid>` | `@css/ban` | inspect |
 | `css_ygac_reset <userid>` | `@css/ban` | reset |
+| `css_ygac_debug` | player | session counters |
 
 ## Safe rollout
 
-1. Set `BanThreshold` to `999` and `KickThreshold` to `999` for a few days (log only + alerts).
-2. Watch console `[YGuardAC]` lines for false positives.
+1. Raise kick counters (`KickAfterHits`, `BanAfterMatchHits`, `KickAtDistinct`) for a few days if needed.
+2. Watch console `[YGuardAC]` / `SILENT-KICK` / `BLIND-HS-KICK` lines.
 3. Lower thresholds when comfortable.
 
 ## Not a VAC replacement
 
-This reduces obvious rage cheats and grief. Review demos for soft cheats.
+This reduces obvious rage cheats and grief. Review demos for soft cheats. Pair with the Windows YGuardAC launcher for client-side integrity.
